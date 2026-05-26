@@ -3,6 +3,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { Link2, Plus, Copy, Trash2, BarChart3, QrCode, Download, ExternalLink, Loader2, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { getUserId } from '@/services/user';
 
 interface ShortLink {
   id: string;
@@ -71,11 +72,11 @@ export function LinkGenerator() {
     if (!slug) return toast.error("Slug inválido");
 
     setCreating(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setCreating(false); return toast.error("Faça login"); }
+    const userId = getUserId();
+    if (!userId) { setCreating(false); return toast.error("Faça login"); }
 
     const { error } = await supabase.from("short_links").insert({
-      user_id: user.id,
+      user_id: userId,
       slug,
       title: title || null,
       phone: cleanPhone,

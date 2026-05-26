@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/services/user';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -20,13 +21,13 @@ Regras:
 - Retorne APENAS o texto final da mensagem, sem explicações, sem aspas, sem títulos.`;
 
 async function getApiKey(): Promise<string> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Usuário não autenticado');
+  const userId = getUserId();
+  if (!userId) throw new Error('Usuário não autenticado');
 
   const { data, error } = await supabase
     .from('ai_settings')
     .select('api_key')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .single();
 
   if (error || !data?.api_key) {

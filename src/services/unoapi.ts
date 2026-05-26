@@ -4,6 +4,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
 import { generateId } from '@/lib/id';
+import { getUserId } from '@/services/user';
 export interface UnoApiCredentials {
   baseUrl: string;       // e.g. https://your-unoapi.com
   token: string;         // Authorization token
@@ -50,10 +51,10 @@ export interface UnoApiInstance {
 const STORAGE_KEY = 'unoapi_credentials';
 
 async function saveUnoApiToDb(creds: UnoApiCredentials): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   await supabase.from('unoapi_settings').upsert({
-    user_id: user.id,
+    user_id: userId,
     base_url: creds.baseUrl,
     token: creds.token,
     s3_enabled: creds.s3Enabled || false,
@@ -67,9 +68,9 @@ async function saveUnoApiToDb(creds: UnoApiCredentials): Promise<void> {
 
 async function loadUnoApiFromDb(): Promise<UnoApiCredentials | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data, error } = await supabase.from('unoapi_settings').select('*').eq('user_id', user.id).maybeSingle();
+    const userId = getUserId();
+    if (!userId) return null;
+    const { data, error } = await supabase.from('unoapi_settings').select('*').eq('user_id', userId).maybeSingle();
     if (error) {
       console.error('Error loading unoapi from DB:', error);
       return null;
@@ -110,9 +111,9 @@ export async function loadUnoApiCredentialsWithFallback(): Promise<UnoApiCredent
 
 export async function clearUnoApiCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('unoapi_settings').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('unoapi_settings').delete().eq('user_id', userId);
 }
 
 // Headers helper

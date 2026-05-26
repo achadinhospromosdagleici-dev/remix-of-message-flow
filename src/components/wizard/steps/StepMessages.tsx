@@ -35,6 +35,7 @@ import { generateId } from '@/lib/id';
 import { loadUnoApiCredentials, uploadToS3, DEFAULT_S3_CONFIG } from '@/services/unoapi';
 import { MessageComposerExtras } from '../MessageComposerExtras';
 import { AiGenerateButton, AiVaryButton } from '../AiMessageHelper';
+import { getUserId } from '@/services/user';
 
 type EditorMediaType = 'text' | 'image' | 'audio' | 'video' | 'sticker' | 'document' | 'buttons' | 'link' | 'list' | 'carousel' | 'contact';
 
@@ -70,13 +71,13 @@ export function StepMessages() {
 
   const fetchStickers = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const userId = getUserId();
+      if (!userId) return;
       
       const { data, error } = await supabase
         .from('media_library')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .eq('media_type', 'sticker')
         .order('created_at', { ascending: false });
         
@@ -472,10 +473,10 @@ return result;
                             
                             // Save to media library if it's a sticker
                             if (mediaType === 'sticker') {
-                              const { data: { user } } = await supabase.auth.getUser();
-                              if (user) {
+                              const userId = getUserId();
+                              if (userId) {
                                 await supabase.from('media_library').insert({
-                                  user_id: user.id,
+                                  user_id: userId,
                                   media_type: 'sticker',
                                   url: pub.publicUrl,
                                   filename: file.name

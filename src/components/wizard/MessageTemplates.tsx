@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { generateId } from '@/lib/id';
+import { getUserId } from '@/services/user';
 
 export interface MessageTemplate {
   id: string;
@@ -25,12 +26,12 @@ export interface MessageTemplate {
 const TEMPLATES_KEY = 'messageflow_templates';
 
 async function saveTemplatesToDb(templates: MessageTemplate[]): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('message_templates').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('message_templates').delete().eq('user_id', userId);
   for (const t of templates) {
     await supabase.from('message_templates').upsert({
-      user_id: user.id,
+      user_id: userId,
       name: t.name,
       content: t.content,
       media_type: 'text',
@@ -39,9 +40,9 @@ async function saveTemplatesToDb(templates: MessageTemplate[]): Promise<void> {
 }
 
 async function loadTemplatesFromDb(): Promise<MessageTemplate[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return defaultTemplates;
-  const { data } = await supabase.from('message_templates').select('*').eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return defaultTemplates;
+  const { data } = await supabase.from('message_templates').select('*').eq('user_id', userId);
   if (!data?.length) return defaultTemplates;
   return data.map((t: any) => ({
     id: t.id,

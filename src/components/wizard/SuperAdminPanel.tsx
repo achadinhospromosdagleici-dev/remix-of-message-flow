@@ -137,15 +137,13 @@ export function SuperAdminPanel() {
     if (!newEmail || !newPass) return toast.error('Preencha e-mail e senha');
     setCreating(true);
     try {
-      const { error } = await supabase.auth.signUp({
-        email: newEmail,
-        password: newPass,
-        options: {
-          emailRedirectTo: `${window.location.origin}/`,
-          data: newName ? { full_name: newName } : undefined,
-        },
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: newEmail, password: newPass, fullName: newName || undefined }),
       });
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       toast.success(`Conta criada para ${newEmail}`);
       setNewEmail(''); setNewPass(''); setNewName('');
       setTimeout(loadAll, 800);

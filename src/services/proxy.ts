@@ -1,9 +1,17 @@
 const PROXY_BASE = '/api/proxy';
 
+function getToken(): string | null {
+  return localStorage.getItem('auth_token');
+}
+
 export async function proxyCall(proxyName: string, body: Record<string, any>): Promise<any> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
   const res = await fetch(`${PROXY_BASE}/${proxyName}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
 

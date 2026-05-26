@@ -5,6 +5,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 
+import { initDatabase } from './db/init.js';
+import authRoutes from './routes/auth.js';
+import { requireAuth } from './middleware/auth.js';
+
 import proxyWuzapi from './routes/proxy/wuzapi.js';
 import proxyUnoapi from './routes/proxy/unoapi.js';
 import proxyEvolution from './routes/proxy/evolution.js';
@@ -32,10 +36,12 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-app.use('/api/proxy/wuzapi', proxyWuzapi);
-app.use('/api/proxy/unoapi', proxyUnoapi);
-app.use('/api/proxy/evolution', proxyEvolution);
-app.use('/api/proxy/evolution-go', proxyEvolutionGo);
+app.use('/api/auth', authRoutes);
+
+app.use('/api/proxy/wuzapi', requireAuth, proxyWuzapi);
+app.use('/api/proxy/unoapi', requireAuth, proxyUnoapi);
+app.use('/api/proxy/evolution', requireAuth, proxyEvolution);
+app.use('/api/proxy/evolution-go', requireAuth, proxyEvolutionGo);
 
 // ── Static frontend (production) ──
 if (existsSync(distDir)) {
@@ -60,11 +66,25 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[server] Rodando na porta ${PORT}`);
-  console.log(`[server] Proxies:`);
-  console.log(`  POST /api/proxy/wuzapi`);
-  console.log(`  POST /api/proxy/unoapi`);
-  console.log(`  POST /api/proxy/evolution`);
-  console.log(`  POST /api/proxy/evolution-go`);
-});
+async function start() {
+  try {
+    await initDatabase();
+  } catch (err) {
+    console.warn('[server] Database init failed, continuing without DB:', err.message);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`[server] Rodando na porta ${PORT}`);
+    console.log(`[server] Auth routes:`);
+    console.log(`  POST /api/auth/signup`);
+    console.log(`  POST /api/auth/login`);
+    console.log(`  GET  /api/auth/me`);
+    console.log(`[server] Proxies (protegidas por JWT):`);
+    console.log(`  POST /api/proxy/wuzapi`);
+    console.log(`  POST /api/proxy/unoapi`);
+    console.log(`  POST /api/proxy/evolution`);
+    console.log(`  POST /api/proxy/evolution-go`);
+  });
+}
+
+start();

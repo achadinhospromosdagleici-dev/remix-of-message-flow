@@ -8,6 +8,7 @@ import { WuzapiSettings } from './WuzapiSettings';
 import { WuzapiConnection } from './WuzapiConnection';
 import { ChatwootInbox } from '@/services/chatwoot';
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/services/user';
 
 interface SettingsPageProps {
   onInboxesLoaded: (inboxes: ChatwootInbox[]) => void;
@@ -85,9 +86,9 @@ function AIGatewaySettings() {
 
   React.useEffect(() => {
     async function load() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase.from('ai_settings').select('*').eq('user_id', user.id).maybeSingle();
+      const userId = getUserId();
+      if (!userId) return;
+      const { data } = await supabase.from('ai_settings').select('*').eq('user_id', userId).maybeSingle();
       if (data) {
         setProvider(data.provider || 'openai');
         setApiKey(data.api_key || '');
@@ -98,10 +99,10 @@ function AIGatewaySettings() {
   }, []);
 
   const handleSave = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
+    const userId = getUserId();
+    if (userId) {
       await supabase.from('ai_settings').upsert({
-        user_id: user.id,
+        user_id: userId,
         provider,
         api_key: apiKey,
         model

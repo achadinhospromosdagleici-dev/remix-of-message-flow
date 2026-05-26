@@ -3,6 +3,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
+import { getUserId } from '@/services/user';
 
 export interface EvolutionGoCredentials {
   baseUrl: string;
@@ -21,10 +22,10 @@ export interface EvolutionGoInstance {
 const STORAGE_KEY = 'evolution_go_credentials';
 
 async function saveEvoGoToDb(creds: EvolutionGoCredentials): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   await supabase.from('evolution_go_settings').upsert({
-    user_id: user.id,
+    user_id: userId,
     base_url: creds.baseUrl,
     api_key: creds.apiKey,
     instance_name: creds.instanceName,
@@ -33,9 +34,9 @@ async function saveEvoGoToDb(creds: EvolutionGoCredentials): Promise<void> {
 
 async function loadEvoGoFromDb(): Promise<EvolutionGoCredentials | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data, error } = await supabase.from('evolution_go_settings').select('*').eq('user_id', user.id).maybeSingle();
+    const userId = getUserId();
+    if (!userId) return null;
+    const { data, error } = await supabase.from('evolution_go_settings').select('*').eq('user_id', userId).maybeSingle();
     if (error) {
       console.error('Error loading evolution-go from DB:', error);
       return null;
@@ -75,9 +76,9 @@ export async function loadEvolutionGoCredentialsWithFallback(): Promise<Evolutio
 
 export async function clearEvolutionGoCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('evolution_go_settings').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('evolution_go_settings').delete().eq('user_id', userId);
 }
 
 export function isEvolutionGoConnected(): boolean {

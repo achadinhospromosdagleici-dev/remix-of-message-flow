@@ -1,6 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
 import { generateToken } from '@/lib/id';
+import { getUserId } from '@/services/user';
 
 export interface WuzapiCredentials {
   baseUrl: string;
@@ -47,11 +48,11 @@ const STORAGE_KEY = 'wuzapi_credentials';
  */
 export async function saveWuzapiSettings(creds: WuzapiCredentials): Promise<{ success: boolean; error?: string }> {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(creds));
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: 'Usuário não autenticado' };
+  const userId = getUserId();
+  if (!userId) return { success: false, error: 'Usuário não autenticado' };
 
   const { error } = await supabase.from('wuzapi_settings').upsert({
-    user_id: user.id,
+    user_id: userId,
     base_url: creds.baseUrl,
     admin_token: creds.adminToken,
   }, { onConflict: 'user_id' });
@@ -74,13 +75,13 @@ export async function loadWuzapiSettings(): Promise<WuzapiCredentials | null> {
   }
   
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+    const userId = getUserId();
+    if (!userId) return null;
     
     const { data, error } = await supabase
       .from('wuzapi_settings')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle();
       
     if (error || !data) return null;
@@ -103,13 +104,13 @@ export async function loadWuzapiSettings(): Promise<WuzapiCredentials | null> {
  * Also migrates legacy instances from user_instances table (source='wuzapi').
  */
 export async function loadWuzapiInstances(): Promise<WuzapiInstance[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  const userId = getUserId();
+  if (!userId) return [];
   
   const { data } = await supabase
     .from('wuzapi_instances')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .order('created_at', { ascending: false });
   
   const instances = (data || []) as WuzapiInstance[];
@@ -118,7 +119,7 @@ export async function loadWuzapiInstances(): Promise<WuzapiInstance[]> {
   const { data: legacyInstances } = await supabase
     .from('user_instances')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('source', 'wuzapi');
 
   if (legacyInstances) {
@@ -126,7 +127,7 @@ export async function loadWuzapiInstances(): Promise<WuzapiInstance[]> {
     const { data: settings } = await supabase
       .from('wuzapi_settings')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .maybeSingle();
 
     for (const legacy of legacyInstances) {
@@ -138,7 +139,7 @@ export async function loadWuzapiInstances(): Promise<WuzapiInstance[]> {
       const { data: newInst } = await supabase
         .from('wuzapi_instances')
         .insert({
-          user_id: user.id,
+          user_id: userId,
           settings_id: settings?.id || null,
           user_token: '',
           name,
@@ -163,10 +164,10 @@ export async function loadWuzapiInstances(): Promise<WuzapiInstance[]> {
  */
 export async function clearWuzapiSettings(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   
-  await supabase.from('wuzapi_settings').delete().eq('user_id', user.id);
+  await supabase.from('wuzapi_settings').delete().eq('user_id', userId);
 }
 
 /**
@@ -179,11 +180,11 @@ export async function saveWuzapiInstance(
   phone?: string,
   status: 'connected' | 'disconnected' | 'connecting' = 'disconnected'
 ): Promise<WuzapiInstance | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = getUserId();
+  if (!userId) return null;
   
   const { data: inst, error } = await supabase.from('wuzapi_instances').upsert({
-    user_id: user.id,
+    user_id: userId,
     settings_id: settingsId,
     user_token: userToken,
     phone,
@@ -194,7 +195,7 @@ export async function saveWuzapiInstance(
   if (error) return null;
   
   await supabase.from('user_instances').upsert({
-    user_id: user.id,
+    user_id: userId,
     instance_name: `wuz_${name}`,
     phone,
     profile_name: name,
@@ -227,7 +228,7 @@ export async function deleteWuzapiInstance(id: string): Promise<void> {
   
   if (data) {
     await supabase.from('user_instances').delete()
-      .eq('user_id', (await supabase.auth.getUser()).data.user?.id || '')
+      .eq('user_id', getUserId() || '')
       .eq('instance_name', `wuz_${data.name}`);
   }
   
@@ -256,13 +257,13 @@ export async function saveWuzapiInstanceDb(
   name: string,
   status: 'connected' | 'disconnected' | 'connecting' = 'disconnected'
 ): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
 
   const { data: settings } = await supabase
     .from('wuzapi_settings')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .single();
 
   if (!settings) {
@@ -271,7 +272,7 @@ export async function saveWuzapiInstanceDb(
 
   // 1. Save to wuzapi_instances
   const { error: wuzErr } = await supabase.from('wuzapi_instances').upsert({
-    user_id: user.id,
+    user_id: userId,
     settings_id: settings.id,
     user_token: userToken,
     phone,
@@ -283,7 +284,7 @@ export async function saveWuzapiInstanceDb(
 
   // 2. Save to centralized user_instances (with wuz_ prefix)
   const { error: userErr } = await supabase.from('user_instances').upsert({
-    user_id: user.id,
+    user_id: userId,
     instance_name: `wuz_${name}`,
     phone,
     profile_name: name,
@@ -298,20 +299,20 @@ export async function saveWuzapiInstanceDb(
  * Deletes WuzAPI instance from both tables.
  */
 export async function deleteWuzapiInstanceDb(name: string, userToken: string): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
 
   const { data: settings } = await supabase
     .from('wuzapi_settings')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .single();
 
   if (settings) {
     await supabase.from('wuzapi_instances').delete().eq('settings_id', settings.id).eq('user_token', userToken);
   }
 
-  await supabase.from('user_instances').delete().eq('user_id', user.id).eq('instance_name', `wuz_${name}`);
+  await supabase.from('user_instances').delete().eq('user_id', userId).eq('instance_name', `wuz_${name}`);
 }
 
 /**
@@ -707,13 +708,13 @@ export function extractPhoneFromJid(jid: string): string {
 // ============================================================================
 
 export async function getWuzapiInstanceByName(name: string): Promise<WuzapiInstance | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = getUserId();
+  if (!userId) return null;
   
   const { data } = await supabase
     .from('wuzapi_instances')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', userId)
     .eq('name', name)
     .single();
   

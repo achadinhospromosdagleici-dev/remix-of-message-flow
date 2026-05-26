@@ -13,17 +13,18 @@ import {
 import { toast } from 'sonner';
 import { readFileAsText } from '@/utils/fileReader';
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/services/user';
 
 const BLACKLIST_KEY = 'messageflow_blacklist';
 const OPT_OUT_KEYWORDS = ['SAIR', 'PARAR', 'CANCELAR', 'STOP', 'REMOVER', 'NAO QUERO', 'NÃO QUERO'];
 
 async function saveBlacklistToDb(list: string[]): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('blacklist').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('blacklist').delete().eq('user_id', userId);
   for (const phone of list) {
     await supabase.from('blacklist').upsert({
-      user_id: user.id,
+      user_id: userId,
       phone,
       reason: 'manual',
     }, { onConflict: 'user_id,phone' });
@@ -31,9 +32,9 @@ async function saveBlacklistToDb(list: string[]): Promise<void> {
 }
 
 async function loadBlacklistFromDb(): Promise<string[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
-  const { data } = await supabase.from('blacklist').select('phone').eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return [];
+  const { data } = await supabase.from('blacklist').select('phone').eq('user_id', userId);
   return data?.map((t: any) => t.phone) ?? [];
 }
 

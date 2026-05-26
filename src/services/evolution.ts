@@ -3,6 +3,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
+import { getUserId } from '@/services/user';
 
 export interface EvolutionCredentials {
   baseUrl: string;
@@ -21,10 +22,10 @@ export interface EvolutionInstance {
 const STORAGE_KEY = 'evolution_credentials';
 
 async function saveEvoToDb(creds: EvolutionCredentials): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   await supabase.from('evolution_settings').upsert({
-    user_id: user.id,
+    user_id: userId,
     base_url: creds.baseUrl,
     api_key: creds.apiKey,
     instance_name: creds.instanceName,
@@ -33,9 +34,9 @@ async function saveEvoToDb(creds: EvolutionCredentials): Promise<void> {
 
 async function loadEvoFromDb(): Promise<EvolutionCredentials | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data, error } = await supabase.from('evolution_settings').select('*').eq('user_id', user.id).maybeSingle();
+    const userId = getUserId();
+    if (!userId) return null;
+    const { data, error } = await supabase.from('evolution_settings').select('*').eq('user_id', userId).maybeSingle();
     if (error) {
       console.error('Error loading evolution from DB:', error);
       return null;
@@ -75,9 +76,9 @@ export async function loadEvolutionCredentialsWithFallback(): Promise<EvolutionC
 
 export async function clearEvolutionCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('evolution_settings').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('evolution_settings').delete().eq('user_id', userId);
 }
 
 // ── Shared Evolution (fallback for trial users) ──

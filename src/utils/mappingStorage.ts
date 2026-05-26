@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/services/user';
 
 const STORAGE_KEY = 'column_mapping_history';
 
@@ -9,12 +10,12 @@ interface MappingEntry {
 }
 
 async function saveMappingToDb(mappings: Record<string, string>) {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   for (const [originalPhone, mappedPhone] of Object.entries(mappings)) {
     if (mappedPhone === '_skip') continue;
     await supabase.from('phone_mappings').upsert({
-      user_id: user.id,
+      user_id: userId,
       original_phone: originalPhone,
       mapped_phone: mappedPhone,
     }, { onConflict: 'user_id,original_phone' });
@@ -22,9 +23,9 @@ async function saveMappingToDb(mappings: Record<string, string>) {
 }
 
 async function loadMappingFromDb(): Promise<Record<string, string>> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return {};
-  const { data } = await supabase.from('phone_mappings').select('*').eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return {};
+  const { data } = await supabase.from('phone_mappings').select('*').eq('user_id', userId);
   const result: Record<string, string> = {};
   data?.forEach((m: any) => { result[m.original_phone] = m.mapped_phone; });
   return result;

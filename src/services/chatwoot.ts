@@ -2,6 +2,7 @@
 // Manages communication with Chatwoot API for message sending and inbox management
 
 import { supabase } from '@/integrations/supabase/client';
+import { getUserId } from '@/services/user';
 
 export interface ChatwootCredentials {
   baseUrl: string; // e.g. https://app.chatwoot.com
@@ -47,10 +48,10 @@ export interface ChatwootContact {
 const STORAGE_KEY = 'chatwoot_credentials';
 
 async function saveChatwootToDb(creds: ChatwootCredentials): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  const userId = getUserId();
+  if (!userId) return;
   await supabase.from('chatwoot_settings').upsert({
-    user_id: user.id,
+    user_id: userId,
     base_url: creds.baseUrl,
     api_token: creds.apiToken,
     account_id: creds.accountId,
@@ -59,9 +60,9 @@ async function saveChatwootToDb(creds: ChatwootCredentials): Promise<void> {
 
 async function loadChatwootFromDb(): Promise<ChatwootCredentials | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
-    const { data, error } = await supabase.from('chatwoot_settings').select('*').eq('user_id', user.id).maybeSingle();
+    const userId = getUserId();
+    if (!userId) return null;
+    const { data, error } = await supabase.from('chatwoot_settings').select('*').eq('user_id', userId).maybeSingle();
     if (error) {
       console.error('Error loading chatwoot from DB:', error);
       return null;
@@ -101,9 +102,9 @@ export async function loadChatwootCredentialsWithFallback(): Promise<ChatwootCre
 
 export async function clearChatwootCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from('chatwoot_settings').delete().eq('user_id', user.id);
+  const userId = getUserId();
+  if (!userId) return;
+  await supabase.from('chatwoot_settings').delete().eq('user_id', userId);
 }
 
 function getHeaders(apiToken: string) {
