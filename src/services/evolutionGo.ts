@@ -2,6 +2,7 @@
 // Manages WhatsApp connection via Evolution Go API
 
 import { supabase } from '@/integrations/supabase/client';
+import { proxyCall } from './proxy';
 
 export interface EvolutionGoCredentials {
   baseUrl: string;
@@ -92,26 +93,7 @@ export async function isEvolutionGoConnectedAsync(): Promise<boolean> {
 // ── Generic proxy call ──
 async function evolutionGoCall(payload: Record<string, any>): Promise<any> {
   console.log('[Evolution Go] Calling proxy...');
-  const { data, error } = await supabase.functions.invoke('evolution-go-proxy', {
-    body: payload,
-  });
-  
-  if (error) {
-    console.error('[Evolution Go Call] Error:', error);
-    let errorDetails = '';
-    if (error.context && typeof error.context.text === 'function') {
-      try {
-        errorDetails = await error.context.clone().text();
-        console.error('[Evolution Go Call] Raw text:', errorDetails);
-      } catch (e) {
-        // failed to read text
-      }
-    }
-    throw new Error(errorDetails || error.message || 'Erro na chamada Evolution Go');
-  }
-  
-  if (data?.error) throw new Error(data.error);
-  return data;
+  return proxyCall('evolution-go', payload);
 }
 
 // ── Listar instâncias ──

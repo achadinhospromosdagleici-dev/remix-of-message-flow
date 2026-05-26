@@ -22,6 +22,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateId } from '@/lib/id';
 
 interface StepConfirmationProps {
   onCampaignStarted?: () => void;
@@ -74,7 +75,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
     if (validContacts === 0) { toast.error('Nenhum contato válido para envio'); return; }
     if (messages.length === 0) { toast.error('Configure ao menos uma mensagem'); return; }
 
-    const campaignId = crypto.randomUUID();
+    const campaignId = generateId();
     const campaignName = `Campanha ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
     // Add to active campaigns immediately so the home page shows progress
@@ -431,7 +432,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
                       return;
                     }
                     addScheduledCampaign({
-                      id: crypto.randomUUID(),
+                      id: generateId(),
                       status: 'scheduled',
                       name: scheduleName.trim(),
                       scheduledDate,

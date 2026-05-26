@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { generateId } from '@/lib/id';
 import { loadUnoApiCredentials, uploadToS3, DEFAULT_S3_CONFIG } from '@/services/unoapi';
 import { MessageComposerExtras } from '../MessageComposerExtras';
 import { AiGenerateButton, AiVaryButton } from '../AiMessageHelper';
@@ -606,7 +607,7 @@ return result;
                       {buttons.length < 3 && (
                         <button
                           type="button"
-                          onClick={() => setButtons([...buttons, { id: crypto.randomUUID(), type: 'url', label: '', value: '' }])}
+                          onClick={() => setButtons([...buttons, { id: generateId(), type: 'url', label: '', value: '' }])}
                           className="text-xs px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 flex items-center gap-1"
                         >
                           <Plus className="w-3 h-3" /> Adicionar botão
@@ -729,7 +730,7 @@ return result;
                     {buttons.length < 3 && (
                       <button
                         type="button"
-                        onClick={() => setButtons([...buttons, { id: crypto.randomUUID(), type: 'url', label: '', value: '' }])}
+                        onClick={() => setButtons([...buttons, { id: generateId(), type: 'url', label: '', value: '' }])}
                         className="text-xs px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 flex items-center gap-1"
                       >
                         <Plus className="w-3 h-3" /> Adicionar botão
@@ -1086,7 +1087,7 @@ return result;
                             type="button"
                             onClick={() => {
                               const next = [...carouselCards];
-                              next[cIdx].buttons = [...(card.buttons || []), { id: crypto.randomUUID(), type: 'reply', label: '', value: '' }];
+                              next[cIdx].buttons = [...(card.buttons || []), { id: generateId(), type: 'reply', label: '', value: '' }];
                               setCarouselCards(next);
                             }}
                             className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary"

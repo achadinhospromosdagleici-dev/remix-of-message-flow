@@ -31,6 +31,7 @@ import {
 import { ChatwootInbox } from '@/services/chatwoot';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { cn } from '@/lib/utils';
+import { generateId } from '@/lib/id';
 
 const campaignSections = [
   { id: 'data-entry', title: '1. Importar Dados', description: 'Cole ou importe sua lista de contatos' },
@@ -81,7 +82,7 @@ export function WizardLayout() {
   };
 
   const handleSchedule = (campaign: Omit<ScheduledCampaign, 'id' | 'status'>) => {
-    addScheduledCampaign({ ...campaign, id: crypto.randomUUID(), status: 'scheduled' });
+    addScheduledCampaign({ ...campaign, id: generateId(), status: 'scheduled' });
   };
 
   const handleInboxesLoaded = (inboxes: ChatwootInbox[]) => {

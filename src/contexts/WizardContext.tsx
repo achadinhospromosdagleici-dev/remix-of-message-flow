@@ -10,6 +10,7 @@ import { loadUnoApiCredentials, testConnection, loadUnoApiCredentialsWithFallbac
 import { loadEvolutionCredentialsWithFallback, saveEvolutionCredentials } from '@/services/evolution';
 import { loadEvolutionGoCredentialsWithFallback, saveEvolutionGoCredentials } from '@/services/evolutionGo';
 import { loadWuzapiSettings, testConnection as testWuzapiConnection } from '@/services/wuzapi';
+import { generateId } from '@/lib/id';
 
 export interface DataRow {
   id: string;
@@ -373,10 +374,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addMessage = (content: string, media?: { mediaType?: Message['mediaType']; mediaUrl?: string; mediaCaption?: string; mediaFilename?: string }) => {
-    setState(prev => ({ ...prev, messages: [...prev.messages, { id: crypto.randomUUID(), content, ...media }] }));
+    setState(prev => ({ ...prev, messages: [...prev.messages, { id: generateId(), content, ...media }] }));
   };
   const addRichMessage = (msg: Omit<Message, 'id'>) => {
-    setState(prev => ({ ...prev, messages: [...prev.messages, { id: crypto.randomUUID(), ...msg }] }));
+    setState(prev => ({ ...prev, messages: [...prev.messages, { id: generateId(), ...msg }] }));
   };
   const updateMessage = (id: string, content: string) => setState(prev => ({ ...prev, messages: prev.messages.map(msg => msg.id === id ? { ...msg, content } : msg) }));
   const updateRichMessage = (id: string, updates: Partial<Omit<Message, 'id'>>) => setState(prev => ({ ...prev, messages: prev.messages.map(msg => msg.id === id ? { ...msg, ...updates } : msg) }));
@@ -414,7 +415,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   };
 
   const reuseCampaign = (campaign: Campaign) => {
-    const restoredMessages = campaign.messages.map(content => ({ id: crypto.randomUUID(), content }));
+    const restoredMessages = campaign.messages.map(content => ({ id: generateId(), content }));
     // Reset to step 1 so the user can input the spreadsheet data required for the new dispatch
     setState(prev => ({ ...prev, messages: restoredMessages, currentStep: 1 }));
   };

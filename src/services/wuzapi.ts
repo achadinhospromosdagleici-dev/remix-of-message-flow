@@ -1,4 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
+import { proxyCall } from './proxy';
+import { generateToken } from '@/lib/id';
 
 export interface WuzapiCredentials {
   baseUrl: string;
@@ -325,39 +327,8 @@ async function apiCall(
   isAdmin = false,
 ): Promise<any> {
   if (!baseUrl) throw new Error('WuzAPI base URL não configurada');
-
-  const projectUrl = import.meta.env.VITE_SUPABASE_URL;
-  const functionUrl = `${projectUrl}/functions/v1/wuzapi-proxy`;
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
   console.log('[WuzAPI] apiCall:', method, `${baseUrl}${endpoint}`, { isAdmin });
-
-  const res = await fetch(functionUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', apikey: anonKey },
-    body: JSON.stringify({ baseUrl, token, endpoint, method, body, isAdmin }),
-  });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    const errorMsg = data.error || data.details?.error || `HTTP ${res.status}`;
-    console.error('[WuzAPI] apiCall error:', res.status, {
-      error: errorMsg,
-      targetUrl: data.targetUrl,
-      method: data.method,
-      type: data.type,
-      details: data.details,
-      hint: data.hint,
-    });
-    throw new Error(errorMsg);
-  }
-
-  if (data?.error) {
-    throw new Error(data.details?.error || data.error);
-  }
-
-  return data;
+  return proxyCall('wuzapi', { baseUrl, token, endpoint, method, body, isAdmin });
 }
 
 // ============================================================================
@@ -384,7 +355,7 @@ export async function createUser(
   adminToken: string,
   name: string
 ): Promise<{ id: number; token: string }> {
-  const token = crypto.randomUUID().replace(/-/g, '');
+  const token = generateToken();
   await apiCall(baseUrl, '/admin/users', adminToken, 'POST', {
     name,
     token,

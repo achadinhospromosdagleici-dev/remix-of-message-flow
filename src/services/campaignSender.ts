@@ -33,6 +33,7 @@ import {
 } from './wuzapi';
 import { sendWuzapiMessage } from './wuzapi-sender';
 import { FollowUpConfig } from '@/components/wizard/FollowUpSettings';
+import { generateId } from '@/lib/id';
 
 export interface SendProgress {
   current: number;
@@ -441,7 +442,7 @@ export async function sendCampaign(
             const contactNumber = replaceVariables(msg.btnFooter || '', contact);
             
             unoMsg.buttons = [{
-              id: crypto.randomUUID(),
+              id: generateId(),
               title: contactName,
               phone: contactNumber,
               contactName: contactName,
@@ -457,7 +458,7 @@ export async function sendCampaign(
               sections: (sections as any[]).map(s => ({
                 title: s.title,
                 rows: s.rows.map((r: any) => ({
-                  id: r.id || crypto.randomUUID(),
+                  id: r.id || generateId(),
                   title: r.title,
                   description: r.description,
                 })),
@@ -475,7 +476,7 @@ export async function sendCampaign(
                 description: card.description || '',
                 footer: card.footer,
                 buttons: card.buttons?.map((b: any) => ({
-                  id: b.id || crypto.randomUUID(),
+                  id: b.id || generateId(),
                   title: b.label || b.title || '',
                   url: b.type === 'url' ? sanitizeWaMeUrl(replaceButtonValue(b.value || b.url || '', contact)) : undefined,
                   phone: b.type === 'phone' ? replaceButtonValue(b.value || b.phone || '', contact).replace(/\D/g, '') : undefined,

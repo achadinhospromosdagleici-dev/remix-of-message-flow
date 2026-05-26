@@ -8,6 +8,7 @@ import {
   Shuffle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateId } from '@/lib/id';
 
 export interface ABTest {
   id: string;
@@ -46,12 +47,12 @@ export function ABTesting({ tests, onAddTest, onRemoveTest, onUseVariant }: ABTe
     }
 
     const newTest: ABTest = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: testName.trim(),
       isActive: true,
       variants: [
         {
-          id: crypto.randomUUID(),
+          id: generateId(),
           name: 'Variante A',
           content: variantA.trim(),
           weight: splitRatio,
@@ -59,7 +60,7 @@ export function ABTesting({ tests, onAddTest, onRemoveTest, onUseVariant }: ABTe
           replyCount: 0,
         },
         {
-          id: crypto.randomUUID(),
+          id: generateId(),
           name: 'Variante B',
           content: variantB.trim(),
           weight: 100 - splitRatio,

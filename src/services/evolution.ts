@@ -2,6 +2,7 @@
 // Manages WhatsApp connection via Evolution API with edge function proxy
 
 import { supabase } from '@/integrations/supabase/client';
+import { proxyCall } from './proxy';
 
 export interface EvolutionCredentials {
   baseUrl: string;
@@ -101,12 +102,7 @@ export async function resolveEvolutionCredentials(): Promise<EvolutionCredential
 
 // ── Generic proxy call ──
 async function evolutionCall(payload: Record<string, any>): Promise<any> {
-  const { data, error } = await supabase.functions.invoke('evolution-proxy', {
-    body: payload,
-  });
-  if (error) throw new Error(error.message || 'Erro na chamada Evolution');
-  if (data?.error) throw new Error(data.error);
-  return data;
+  return proxyCall('evolution', payload);
 }
 
 // ── ETAPA 1: Listar instâncias ──

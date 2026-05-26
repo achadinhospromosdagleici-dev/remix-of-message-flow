@@ -2,6 +2,8 @@
 // Sends WhatsApp messages (text, image, audio, document, video) via UnoAPI Cloud API
 // API follows WhatsApp Cloud API format: https://github.com/clairton/unoapi-cloud
 import { supabase } from '@/integrations/supabase/client';
+import { proxyCall } from './proxy';
+import { generateId } from '@/lib/id';
 export interface UnoApiCredentials {
   baseUrl: string;       // e.g. https://your-unoapi.com
   token: string;         // Authorization token
@@ -125,40 +127,27 @@ function buildApiUrl(baseUrl: string, phoneNumberId: string): string {
   return `${baseUrl}/v15.0/${phoneNumberId}/messages`;
 }
 
-// Proxy call via edge function (avoids CORS)
-async function proxyCall(creds: UnoApiCredentials, endpoint: string, method = 'GET', requestBody?: any): Promise<{ ok: boolean; data: any }> {
-  const projectUrl = import.meta.env.VITE_SUPABASE_URL;
-  const functionUrl = `${projectUrl}/functions/v1/unoapi-proxy`;
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
+// Proxy call via local server (avoids CORS)
+async function proxyCallFn(creds: UnoApiCredentials, endpoint: string, method = 'GET', requestBody?: any): Promise<{ ok: boolean; data: any }> {
   try {
-    const res = await fetch(functionUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': anonKey },
-      body: JSON.stringify({
-        baseUrl: creds.baseUrl,
-        token: creds.token,
-        endpoint,
-        method,
-        body: requestBody,
-      }),
+    const data = await proxyCall('unoapi', {
+      baseUrl: creds.baseUrl,
+      token: creds.token,
+      endpoint,
+      method,
+      body: requestBody,
     });
-    const data = await res.json();
-    if (!res.ok) {
-      console.error('[unoapi] proxyCall error:', res.status, data);
-      return { ok: false, data };
-    }
     return { ok: true, data };
-  } catch (err) {
-    console.error('[unoapi] proxyCall catch:', err);
-    return { ok: false, data: err };
+  } catch (err: any) {
+    console.error('[unoapi] proxyCall error:', err);
+    return { ok: false, data: { error: err.message } };
   }
 }
 
 // Proxy send message (avoids CORS issues)
 async function proxySendMessage(creds: UnoApiCredentials, phoneNumberId: string, payload: any): Promise<any> {
   const endpoint = `/v15.0/${phoneNumberId}/messages`;
-  const result = await proxyCall(creds, endpoint, 'POST', payload);
+  const result = await proxyCallFn(creds, endpoint, 'POST', payload);
   
   if (!result.ok || !result.data) {
     throw new Error(result.data?.error || 'Erro ao enviar mensagem via proxy');
@@ -174,10 +163,11 @@ async function proxySendMessage(creds: UnoApiCredentials, phoneNumberId: string,
 // Auto-detect Evolution API by trying its fetchInstances endpoint
 async function detectEvolutionApi(creds: UnoApiCredentials): Promise<boolean> {
   try {
-    const { data, error } = await supabase.functions.invoke('evolution-proxy', {
-      body: { action: 'fetchInstances', baseUrl: creds.baseUrl, apiKey: creds.token },
+    const data = await proxyCall('evolution', {
+      action: 'fetchInstances',
+      baseUrl: creds.baseUrl,
+      apiKey: creds.token,
     });
-    if (error) return false;
     return data && Array.isArray(data.instances);
   } catch {
     return false;
@@ -187,10 +177,11 @@ async function detectEvolutionApi(creds: UnoApiCredentials): Promise<boolean> {
 // Fetch instances via Evolution API proxy
 async function fetchEvolutionInstances(creds: UnoApiCredentials): Promise<{ instances: UnoApiInstance[]; error?: string }> {
   try {
-    const { data, error } = await supabase.functions.invoke('evolution-proxy', {
-      body: { action: 'fetchInstances', baseUrl: creds.baseUrl, apiKey: creds.token },
+    const data = await proxyCall('evolution', {
+      action: 'fetchInstances',
+      baseUrl: creds.baseUrl,
+      apiKey: creds.token,
     });
-    if (error) return { instances: [], error: error.message };
     if (data?.instances && Array.isArray(data.instances)) {
       const instances: UnoApiInstance[] = data.instances.map((inst: any) => ({
         phone: inst.phone || inst.instanceName || '',
@@ -211,14 +202,14 @@ export async function testConnection(creds: UnoApiCredentials): Promise<boolean>
   
   try {
     // Try ping first
-    const pingResult = await proxyCall(creds, 'ping');
+    const pingResult = await proxyCallFn(creds, 'ping');
     if (pingResult.ok && pingResult.data) {
       const text = typeof pingResult.data === 'string' ? pingResult.data : (pingResult.data.text || JSON.stringify(pingResult.data));
       if (text.toLowerCase().includes('pong')) return true;
     }
 
     // Fallback: Try fetching sessions (the actual endpoint we use)
-    const sessionsResult = await proxyCall(creds, 'sessions');
+    const sessionsResult = await proxyCallFn(creds, 'sessions');
     if (sessionsResult.ok && sessionsResult.data) {
       // If we got a valid JSON response from the proxy, the API is reachable
       return true;
@@ -242,7 +233,7 @@ export async function fetchInstances(creds: UnoApiCredentials): Promise<{ instan
 
   try {
     // Use ONLY /sessions endpoint
-    const result = await proxyCall(creds, 'sessions');
+    const result = await proxyCallFn(creds, 'sessions');
     
     if (result.ok && result.data) {
       const data = result.data;
@@ -564,7 +555,7 @@ export async function sendInteractiveButtons(
             return {
               type: 'reply',
               reply: {
-                id: btn.id || crypto.randomUUID().toString(),
+                id: btn.id || generateId(),
                 title: btn.reply,
               },
             };
@@ -573,7 +564,7 @@ export async function sendInteractiveButtons(
             return {
               type: 'reply',
               reply: {
-                id: btn.id || crypto.randomUUID().toString(),
+                id: btn.id || generateId(),
                 title: btn.title,
               },
             };
@@ -740,7 +731,7 @@ export async function sendCarouselMessage(
                   return {
                     type: 'reply',
                     reply: {
-                      id: btn.id || crypto.randomUUID().toString(),
+                      id: btn.id || generateId(),
                       title: btn.reply || btn.title,
                     },
                   };

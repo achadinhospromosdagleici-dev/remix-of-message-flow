@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { generateId } from '@/lib/id';
 
 export interface MessageTemplate {
   id: string;
@@ -134,7 +135,7 @@ export function MessageTemplates({ onUseTemplate }: MessageTemplatesProps) {
     }
 
     const newTemplate: MessageTemplate = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name: newName.trim(),
       content: newContent.trim(),
       category: newCategory,

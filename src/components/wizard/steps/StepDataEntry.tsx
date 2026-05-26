@@ -3,6 +3,7 @@ import { useWizard, DataRow } from '@/contexts/WizardContext';
 import { validatePhoneNumber, parseCSVLine, detectDelimiter } from '@/utils/phoneValidation';
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Table, FileText, ListOrdered, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { generateId } from '@/lib/id';
 import { SpreadsheetPasteArea } from '../SpreadsheetPasteArea';
 
 export function StepDataEntry() {
@@ -31,7 +32,7 @@ export function StepDataEntry() {
     const rows: any[] = dataLines.map(line => {
       const values = parseCSVLine(line, delimiter);
       const row: any = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         numero: '',
         isValid: false
       };
