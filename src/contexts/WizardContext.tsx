@@ -67,6 +67,10 @@ export interface WizardSettings {
   messageRandomization: 'random' | 'sequential';
   instanceRandomization: boolean;
   templatesEnabled: boolean;
+  scheduleEnabled: boolean;
+  scheduleWeekDays: number[];
+  scheduleStartTime: string;
+  scheduleEndTime: string;
 }
 
 interface WizardState {
@@ -147,6 +151,10 @@ const defaultSettings: WizardSettings = {
   messageRandomization: 'sequential',
   instanceRandomization: true,
   templatesEnabled: false,
+  scheduleEnabled: false,
+  scheduleWeekDays: [1, 2, 3, 4, 5],
+  scheduleStartTime: '08:00',
+  scheduleEndTime: '18:00',
 };
 
 const defaultFollowUpConfig: FollowUpConfig = {
@@ -241,6 +249,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
           return {
             ...defaultState,
             ...parsed,
+            settings: { ...defaultSettings, ...(parsed.settings || {}) },
             selectedInstances: Array.isArray(parsed.selectedInstances) ? parsed.selectedInstances : [],
             unoApiConnected: !!localStorage.getItem('unoapi_credentials'),
             wuzapiConnected: !!localStorage.getItem('wuzapi_credentials'),

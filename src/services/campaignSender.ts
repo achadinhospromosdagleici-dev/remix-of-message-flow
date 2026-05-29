@@ -34,6 +34,7 @@ import {
 import { sendWuzapiMessage } from './wuzapi-sender';
 import { FollowUpConfig } from '@/components/wizard/FollowUpSettings';
 import { generateId } from '@/lib/id';
+import { msUntilAllowed, sleepCapped } from '@/utils/schedule';
 
 export interface SendProgress {
   current: number;
@@ -56,6 +57,22 @@ function delay(ms: number): Promise<void> {
 
 function getRandomInterval(min: number, max: number): number {
   return (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
+}
+
+async function waitUntilSchedule(allowedWeekDays?: number[], allowedTimes?: string[]): Promise<void> {
+  if (!allowedWeekDays?.length && !allowedTimes?.length) return;
+  const horaIni = allowedTimes?.length ? allowedTimes.reduce((a, b) => a < b ? a : b) : undefined;
+  const horaFim = allowedTimes?.length ? allowedTimes.reduce((a, b) => a > b ? a : b) : undefined;
+  const ms = msUntilAllowed(new Date(), {
+    horaIni,
+    horaFim,
+    diasSemana: allowedWeekDays,
+    timezone: 'America/Sao_Paulo',
+  });
+  if (ms > 0) {
+    console.log(`[schedule] Fora da janela. Aguardando ${Math.round(ms / 60000)}min...`);
+    await sleepCapped(ms);
+  }
 }
 
 function replaceVariables(template: string, contact: Record<string, any>): string {
@@ -191,6 +208,7 @@ export async function sendCampaign(
   followUpConfig: FollowUpConfig,
   onProgress: ProgressCallback,
   abortSignal?: AbortSignal,
+  schedule?: { allowedWeekDays?: number[]; allowedTimes?: string[] },
 ): Promise<SendProgress> {
   if (selectedPhoneNumbers.length === 0) throw new Error('Nenhum número remetente selecionado');
 
@@ -293,6 +311,11 @@ export async function sendCampaign(
       progress.status = 'paused';
       addLog('⏸️ Campanha pausada pelo usuário', 'warning');
       return progress;
+    }
+
+    // Wait until within allowed schedule (weekday/hour restriction)
+    if (schedule) {
+      await waitUntilSchedule(schedule.allowedWeekDays, schedule.allowedTimes);
     }
 
     const contact = contacts[i];

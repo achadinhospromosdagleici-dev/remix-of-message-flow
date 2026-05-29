@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Timer,
   Shuffle,
+  Calendar,
 } from 'lucide-react';
 
 export function StepSettings() {
@@ -273,6 +274,95 @@ export function StepSettings() {
         {settings.templatesEnabled && (
           <div className="glass-card p-6 animate-fade-in">
             <MessageTemplates onUseTemplate={(content) => addMessage(content)} />
+          </div>
+        )}
+
+        {/* Schedule Toggle */}
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Calendar className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium">Agendamento de Disparo</p>
+                <p className="text-sm text-muted-foreground">
+                  Restringir disparo a dias e horários específicos
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSettings({ scheduleEnabled: !settings.scheduleEnabled })}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${
+                settings.scheduleEnabled ? 'bg-primary' : 'bg-muted'
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition-transform ${settings.scheduleEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
+
+        {/* Schedule Config Content */}
+        {settings.scheduleEnabled && (
+          <div className="glass-card p-6 space-y-4 animate-fade-in">
+            <div className="space-y-2">
+              <label className="text-sm text-muted-foreground">Dias da Semana</label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: 0, label: 'Dom' },
+                  { value: 1, label: 'Seg' },
+                  { value: 2, label: 'Ter' },
+                  { value: 3, label: 'Qua' },
+                  { value: 4, label: 'Qui' },
+                  { value: 5, label: 'Sex' },
+                  { value: 6, label: 'Sáb' },
+                ].map(day => (
+                  <button
+                    key={day.value}
+                    onClick={() => {
+                      const days = settings.scheduleWeekDays.includes(day.value)
+                        ? settings.scheduleWeekDays.filter(d => d !== day.value)
+                        : [...settings.scheduleWeekDays, day.value].sort();
+                      setSettings({ scheduleWeekDays: days });
+                    }}
+                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      settings.scheduleWeekDays.includes(day.value)
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted/50 text-muted-foreground hover:bg-muted'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Horário Início</label>
+                <input
+                  type="time"
+                  value={settings.scheduleStartTime}
+                  onChange={(e) => setSettings({ scheduleStartTime: e.target.value })}
+                  className="w-full px-4 py-2 rounded-lg bg-muted/50 border border-border/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-muted-foreground">Horário Fim</label>
+                <input
+                  type="time"
+                  value={settings.scheduleEndTime}
+                  onChange={(e) => setSettings({ scheduleEndTime: e.target.value })}
+                  className="w-full px-4 py-2 rounded-lg bg-muted/50 border border-border/50 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+              <p className="text-muted-foreground">
+                O disparo será pausado automaticamente fora dos dias e horários selecionados e retomará no próximo horário permitido.
+              </p>
+            </div>
           </div>
         )}
       </div>
