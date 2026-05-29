@@ -1,8 +1,8 @@
 // Chatwoot API Service
 // Manages communication with Chatwoot API for message sending and inbox management
 
-import { supabase } from '@/integrations/supabase/client';
 import { getUserId } from '@/services/user';
+import { api } from '@/services/api';
 
 export interface ChatwootCredentials {
   baseUrl: string; // e.g. https://app.chatwoot.com
@@ -50,23 +50,19 @@ const STORAGE_KEY = 'chatwoot_credentials';
 async function saveChatwootToDb(creds: ChatwootCredentials): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('chatwoot_settings').upsert({
-    user_id: userId,
+  await api.upsert('chatwoot_settings', {
     base_url: creds.baseUrl,
     api_token: creds.apiToken,
     account_id: creds.accountId,
-  }, { onConflict: 'user_id' });
+  }, 'user_id');
 }
 
 async function loadChatwootFromDb(): Promise<ChatwootCredentials | null> {
   try {
     const userId = getUserId();
     if (!userId) return null;
-    const { data, error } = await supabase.from('chatwoot_settings').select('*').eq('user_id', userId).maybeSingle();
-    if (error) {
-      console.error('Error loading chatwoot from DB:', error);
-      return null;
-    }
+    const rows = await api.get('chatwoot_settings');
+    const data = rows?.[0];
     if (!data) return null;
     return {
       baseUrl: data.base_url,
@@ -104,7 +100,9 @@ export async function clearChatwootCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('chatwoot_settings').delete().eq('user_id', userId);
+  const rows = await api.get('chatwoot_settings');
+  const data = rows?.[0];
+  if (data?.id) await api.del('chatwoot_settings', data.id);
 }
 
 function getHeaders(apiToken: string) {

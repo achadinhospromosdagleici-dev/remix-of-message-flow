@@ -30,7 +30,7 @@ import {
   Music,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { generateId } from '@/lib/id';
 import { loadUnoApiCredentials, uploadToS3, DEFAULT_S3_CONFIG } from '@/services/unoapi';
 import { MessageComposerExtras } from '../MessageComposerExtras';
@@ -74,14 +74,10 @@ export function StepMessages() {
       const userId = getUserId();
       if (!userId) return;
       
-      const { data, error } = await supabase
-        .from('media_library')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('media_type', 'sticker')
-        .order('created_at', { ascending: false });
-        
-      if (error) throw error;
+      const data = await api.get('media_library', {
+        media_type: 'sticker',
+        order: 'created_at.desc',
+      });
       setStickers(data || []);
     } catch (err) {
       console.error('[media-library-fetch]', err);
@@ -455,31 +451,28 @@ return result;
                             console.log('[upload] Using Supabase Storage');
                             const ext = file.name.includes('.') ? file.name.split('.').pop() : '';
                             const safeBase = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 60);
-                            const path = `${mediaType}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeBase}`;
-                            
-                            const { error: upErr } = await supabase.storage
-                              .from('campaign-media')
-                              .upload(path, file, { contentType: file.type, upsert: false });
-                              
-                            if (upErr) {
-                              if (upErr.message.includes('bucket not found') || upErr.message.includes('Bucket not found')) {
-                                throw new Error('O bucket "campaign-media" não foi encontrado no Supabase. Por favor, execute o SQL de criação.');
-                              }
-                              throw upErr;
-                            }
-                            
-                            const { data: pub } = supabase.storage.from('campaign-media').getPublicUrl(path);
-                            setMediaUrl(pub.publicUrl);
-                            
+
+                            const formData = new FormData();
+                            formData.append('file', file);
+                            formData.append('mediaType', mediaType);
+                            const upRes = await fetch('/api/upload', {
+                              method: 'POST',
+                              headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                              body: formData,
+                            });
+                            const upData = await upRes.json();
+                            if (!upRes.ok) throw new Error(upData.error || 'Upload failed');
+                            const publicUrl = upData.url;
+                            setMediaUrl(publicUrl);
+
                             // Save to media library if it's a sticker
                             if (mediaType === 'sticker') {
                               const userId = getUserId();
                               if (userId) {
-                                await supabase.from('media_library').insert({
-                                  user_id: userId,
+                                await api.post('media_library', {
                                   media_type: 'sticker',
-                                  url: pub.publicUrl,
-                                  filename: file.name
+                                  url: publicUrl,
+                                  filename: file.name,
                                 });
                                 fetchStickers();
                               }
@@ -1009,18 +1002,19 @@ return result;
                               const toastId = toast.loading('Enviando imagem do card...');
                               try {
                                 const ext = file.name.includes('.') ? file.name.split('.').pop() : 'png';
-                                const path = `carousel/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-                                
-                                const { error: upErr } = await supabase.storage
-                                  .from('campaign-media')
-                                  .upload(path, file);
-                                  
-                                if (upErr) throw upErr;
-                                
-                                const { data: pub } = supabase.storage.from('campaign-media').getPublicUrl(path);
+                                const formData = new FormData();
+                                formData.append('file', file);
+                                formData.append('mediaType', 'carousel');
+                                const upRes = await fetch('/api/upload', {
+                                  method: 'POST',
+                                  headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                                  body: formData,
+                                });
+                                const upData = await upRes.json();
+                                if (!upRes.ok) throw new Error(upData.error || 'Upload failed');
                                 
                                 const next = [...carouselCards];
-                                next[cIdx].image = pub.publicUrl;
+                                next[cIdx].image = upData.url;
                                 setCarouselCards(next);
                                 toast.success('Imagem enviada!', { id: toastId });
                               } catch (err: any) {

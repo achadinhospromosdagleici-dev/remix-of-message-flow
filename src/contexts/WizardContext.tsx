@@ -171,12 +171,6 @@ const defaultMetrics: CampaignMetrics = {
   campaignCount: 3,
 };
 
-const defaultInstances: Instance[] = [
-  { id: '1', name: 'Instância Principal', status: 'active', phoneNumber: '+55 11 99999-0001' },
-  { id: '2', name: 'Instância Backup', status: 'inactive', phoneNumber: '+55 11 99999-0002' },
-  { id: '3', name: 'Marketing', status: 'pending' },
-];
-
 const sampleCampaignHistory: Campaign[] = [
   {
     id: '1',
@@ -218,8 +212,8 @@ const defaultState: WizardState = {
   data: [],
   columns: ['numero'],
   messages: [],
-  instances: defaultInstances,
-  selectedInstances: ['1'],
+  instances: [],
+  selectedInstances: [],
   settings: defaultSettings,
   campaignHistory: sampleCampaignHistory,
   chatwootConnected: false,

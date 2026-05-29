@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 
 export default function LinkRedirect() {
   const { slug } = useParams<{ slug: string }>();
@@ -12,16 +11,19 @@ export default function LinkRedirect() {
     if (!slug) return;
     (async () => {
       try {
-        const { data, error } = await supabase.functions.invoke("link-redirect", {
-          body: {
+        const res = await fetch("/api/link-redirect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             slug,
             referrer: document.referrer,
             utm_source: searchParams.get("utm_source"),
             utm_medium: searchParams.get("utm_medium"),
             utm_campaign: searchParams.get("utm_campaign"),
-          },
+          }),
         });
-        if (error || !data?.url) {
+        const data = await res.json();
+        if (!res.ok || !data?.url) {
           setError("Link não encontrado ou inativo.");
           return;
         }

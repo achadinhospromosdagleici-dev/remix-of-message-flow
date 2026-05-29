@@ -4,6 +4,8 @@ import { Campaign } from '../CampaignHistory';
 import { sendCampaign, SendProgress, CampaignMessage } from '@/services/campaignSender';
 import { loadUnoApiCredentials } from '@/services/unoapi';
 import { loadEvolutionCredentials } from '@/services/evolution';
+import { loadEvolutionGoCredentials } from '@/services/evolutionGo';
+import { loadChatwootCredentials } from '@/services/chatwoot';
 import { ScheduledCampaign } from '../CampaignScheduler';
 import {
   Users,
@@ -47,16 +49,25 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
   const validData = Array.isArray(data) ? data.filter(r => r.isValid) : [];
   const selectedInstancesData = Array.isArray(instances) ? instances.filter(i => selectedInstances.includes(i.id)) : [];
 
-  // Detect API source from selected instances (evo_ → Evolution, uno_ → UnoAPI)
+  // Detect API source from selected instances (evo_ → Evolution, evogo_ → Evolution Go, uno_ → UnoAPI, wuz_ → WuzAPI, chatwoot_ → Chatwoot)
   const usesEvolution = selectedInstances.some(id => id.startsWith('evo_'));
+  const usesEvoGo = selectedInstances.some(id => id.startsWith('evogo_'));
   const usesUnoApi = selectedInstances.some(id => id.startsWith('uno_'));
+  const usesWuzapi = selectedInstances.some(id => id.startsWith('wuz_'));
+  const usesChatwoot = selectedInstances.some(id => id.startsWith('chatwoot_'));
   const evoCreds = loadEvolutionCredentials();
+  const evoGoCreds = loadEvolutionGoCredentials();
   const unoCreds = loadUnoApiCredentials();
+  const wuzCreds = localStorage.getItem('wuzapi_credentials') ? JSON.parse(localStorage.getItem('wuzapi_credentials')!) : null;
+  const cwCreds = loadChatwootCredentials();
   const hasRequiredCreds =
     (usesEvolution && !!evoCreds) ||
+    (usesEvoGo && !!evoGoCreds) ||
     (usesUnoApi && !!unoCreds) ||
-    (!usesEvolution && !usesUnoApi && (unoApiConnected || !!evoCreds));
-  const apiLabel = usesEvolution ? 'Evolution API' : usesUnoApi ? 'UnoAPI' : 'WhatsApp API';
+    (usesWuzapi && !!wuzCreds) ||
+    (usesChatwoot && !!cwCreds) ||
+    (!usesEvolution && !usesEvoGo && !usesUnoApi && !usesWuzapi && !usesChatwoot && (unoApiConnected || !!evoCreds || !!evoGoCreds || !!wuzCreds || !!cwCreds));
+  const apiLabel = usesEvolution ? 'Evolution API' : usesEvoGo ? 'Evolution Go' : usesUnoApi ? 'UnoAPI' : usesWuzapi ? 'WuzAPI' : usesChatwoot ? 'Chatwoot' : 'WhatsApp API';
 
   const calculateTotalTime = () => {
     const messageCount = settings.sendType === 'multiple' ? messages.length : 1;
@@ -71,7 +82,10 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
   const handleStartSending = async () => {
     if (selectedInstances.length === 0) { toast.error('Selecione ao menos um número remetente!'); return; }
     if (usesEvolution && !evoCreds) { toast.error('Credenciais da Evolution API não configuradas'); return; }
+    if (usesEvoGo && !evoGoCreds) { toast.error('Credenciais da Evolution Go não configuradas'); return; }
     if (usesUnoApi && !unoCreds) { toast.error('Credenciais da UnoAPI não configuradas'); return; }
+    if (usesWuzapi && !wuzCreds) { toast.error('Credenciais da WuzAPI não configuradas'); return; }
+    if (usesChatwoot && !cwCreds) { toast.error('Credenciais do Chatwoot não configuradas'); return; }
     if (validContacts === 0) { toast.error('Nenhum contato válido para envio'); return; }
     if (messages.length === 0) { toast.error('Configure ao menos uma mensagem'); return; }
 
@@ -282,7 +296,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
                 <div>
                   <p className="font-medium text-destructive">API não configurada</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Vá em Configurações e conecte a Evolution API ou UnoAPI para habilitar o envio.
+                    Vá em Configurações e conecte a Evolution API, Evolution Go, UnoAPI, WuzAPI ou Chatwoot para habilitar o envio.
                   </p>
                 </div>
               </div>

@@ -47,7 +47,7 @@ import {
   WuzapiInstanceDb,
 } from '@/services/wuzapi';
 import { useSharedEvolution } from '@/hooks/useSharedEvolution';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function StepInstances() {
@@ -126,14 +126,8 @@ export function StepInstances() {
     async function fetchUserInstances() {
       if (!user?.id) return;
       try {
-        const { data } = await (supabase as any)
-          .from('user_instances')
-          .select('instance_name')
-          .eq('user_id', user.id)
-          .eq('status', 'connected');
-        if (data && Array.isArray(data)) {
-          setUserInstances(data.map((r: any) => r.instance_name));
-        }
+        const data = (await api.get('user_instances', { status: 'connected' })) || [];
+        setUserInstances(data.map((r: any) => r.instance_name));
       } catch (err) {
         console.error('Error fetching user instances:', err);
       }
@@ -281,17 +275,9 @@ export function StepInstances() {
     const wuzCreds = await loadWuzapiSettings();
     if (wuzCreds && user?.id) {
       promises.push(
-        supabase
-          .from('wuzapi_instances')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .then(({ data }) => {
-            if (data) {
-              setWuzInstances(data as WuzapiInstanceDb[]);
-            } else {
-              setWuzInstances([]);
-            }
+        api.get('wuzapi_instances')
+          .then((data) => {
+            setWuzInstances((data || []) as WuzapiInstanceDb[]);
           })
           .catch((err) => {
             console.error('[StepInstances] WuzAPI fetch error:', err);
@@ -353,7 +339,7 @@ export function StepInstances() {
       : []),
   ];
 
-  const displayInstances = mergedInstances.length > 0 ? mergedInstances : instances.map(i => ({ ...i, source: 'default' as const }));
+  const displayInstances = mergedInstances;
   const activeInstances = displayInstances.filter((i) => i.status === 'active');
   
   const selectedSource = selectedInstances.length > 0 
@@ -403,28 +389,6 @@ export function StepInstances() {
   return (
     <div className="max-w-4xl mx-auto space-y-4">
 
-      {/* API Selection */}
-      {hasAnyApi && (
-        <div className="glass-card p-4 border-primary/30">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Phone className="w-5 h-5 text-primary" />
-            </div>
-            <div>
-              <p className="font-medium">API de Envio</p>
-              <p className="text-sm text-muted-foreground">
-                {selectedApi === 'unoapi' && 'Usando UnoAPI'}
-                {selectedApi === 'evolution' && 'Usando Evolution'}
-                {selectedApi === 'evolution-go' && 'Usando Evolution Go'}
-                {selectedApi === 'chatwoot' && 'Usando Chatwoot'}
-                {selectedApi === 'wuzapi' && 'Usando WuzAPI'}
-                {!selectedApi && loading ? 'Detectando...' : (!selectedApi && 'Automático')}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Sources info */}
       {hasAnyApi && (
         <div className="glass-card p-4 border-primary/30">
@@ -470,7 +434,23 @@ export function StepInstances() {
             <div>
               <p className="font-medium text-warning">Nenhuma API conectada</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Vá em Configurações → Evolution API ou UnoAPI para conectar e buscar seus números.
+                Vá em Configurações e conecte uma API de WhatsApp (Evolution API, UnoAPI, WuzAPI etc) para buscar seus números.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* API connected but no instances found */}
+      {hasAnyApi && !loading && displayInstances.length === 0 && (
+        <div className="glass-card p-4 border-warning/30 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <Smartphone className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-warning">Nenhuma instância encontrada</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                A API está configurada, mas nenhuma instância foi criada ainda.
+                Acesse <strong>Configurações → Gerenciador de Instâncias</strong> para conectar um número de WhatsApp via QR Code.
               </p>
             </div>
           </div>
@@ -605,14 +585,14 @@ export function StepInstances() {
       )}
 
       {/* No active warning */}
-      {!loading && activeInstances.length === 0 && (
+      {!loading && displayInstances.length > 0 && activeInstances.length === 0 && (
         <div className="glass-card p-4 border-warning/30 bg-warning/5">
           <div className="flex items-start gap-3">
             <Clock className="w-5 h-5 text-warning shrink-0" />
             <div>
               <p className="font-medium text-warning">Nenhum número ativo</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Conecte um número na Evolution API, UnoAPI ou WuzAPI para enviar mensagens.
+                Conecte um número via QR Code no <strong>Gerenciador de Instâncias</strong> em Configurações para ativar o envio.
               </p>
             </div>
           </div>

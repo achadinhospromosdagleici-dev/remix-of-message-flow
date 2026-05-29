@@ -1,10 +1,10 @@
 // UnoAPI Service
 // Sends WhatsApp messages (text, image, audio, document, video) via UnoAPI Cloud API
 // API follows WhatsApp Cloud API format: https://github.com/clairton/unoapi-cloud
-import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
 import { generateId } from '@/lib/id';
 import { getUserId } from '@/services/user';
+import { api } from '@/services/api';
 export interface UnoApiCredentials {
   baseUrl: string;       // e.g. https://your-unoapi.com
   token: string;         // Authorization token
@@ -53,8 +53,7 @@ const STORAGE_KEY = 'unoapi_credentials';
 async function saveUnoApiToDb(creds: UnoApiCredentials): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('unoapi_settings').upsert({
-    user_id: userId,
+  await api.upsert('unoapi_settings', {
     base_url: creds.baseUrl,
     token: creds.token,
     s3_enabled: creds.s3Enabled || false,
@@ -63,18 +62,15 @@ async function saveUnoApiToDb(creds: UnoApiCredentials): Promise<void> {
     s3_secret_key: creds.s3SecretKey,
     s3_bucket: creds.s3Bucket,
     s3_region: creds.s3Region,
-  }, { onConflict: 'user_id' });
+  }, 'user_id');
 }
 
 async function loadUnoApiFromDb(): Promise<UnoApiCredentials | null> {
   try {
     const userId = getUserId();
     if (!userId) return null;
-    const { data, error } = await supabase.from('unoapi_settings').select('*').eq('user_id', userId).maybeSingle();
-    if (error) {
-      console.error('Error loading unoapi from DB:', error);
-      return null;
-    }
+    const rows = await api.get('unoapi_settings');
+    const data = rows?.[0];
     if (!data) return null;
     return {
       baseUrl: data.base_url,
@@ -113,7 +109,9 @@ export async function clearUnoApiCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('unoapi_settings').delete().eq('user_id', userId);
+  const rows = await api.get('unoapi_settings');
+  const data = rows?.[0];
+  if (data?.id) await api.del('unoapi_settings', data.id);
 }
 
 // Headers helper

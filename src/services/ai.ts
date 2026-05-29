@@ -1,5 +1,5 @@
-import { supabase } from '@/integrations/supabase/client';
 import { getUserId } from '@/services/user';
+import { api } from '@/services/api';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -24,17 +24,10 @@ async function getApiKey(): Promise<string> {
   const userId = getUserId();
   if (!userId) throw new Error('Usuário não autenticado');
 
-  const { data, error } = await supabase
-    .from('ai_settings')
-    .select('api_key')
-    .eq('user_id', userId)
-    .single();
-
-  if (error || !data?.api_key) {
-    throw new Error('Configure sua chave de API do OpenRouter em Configurações');
-  }
-
-  return data.api_key;
+  const rows = await api.get('ai_settings');
+  const data = rows?.[0];
+  if (data?.api_key) return data.api_key;
+  throw new Error('Chave de API não configurada');
 }
 
 async function callOpenRouter(model: string, system: string, prompt: string) {

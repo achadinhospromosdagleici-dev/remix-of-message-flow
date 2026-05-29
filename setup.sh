@@ -11,7 +11,7 @@ USE_DOCKER=true
 for arg in "$@"; do [ "$arg" = "--no-docker" ] && USE_DOCKER=false; done
 
 info "=== Remix Message Flow — Setup ==="
-
+ 
 # ── Check prerequisites ──
 HAS_NODE=false; HAS_DOCKER=false; HAS_PSQL=false
 command -v node  >/dev/null 2>&1 && HAS_NODE=true

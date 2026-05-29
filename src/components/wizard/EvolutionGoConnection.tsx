@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Smartphone, Link2, Unlink, Loader2, Eye, EyeOff, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, Plus, List, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
 import {
   EvolutionGoCredentials,
   EvolutionGoInstance,

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 
 export function useSharedEvolution() {
   const [enabled, setEnabled] = useState(false);
@@ -8,13 +8,9 @@ export function useSharedEvolution() {
   useEffect(() => {
     async function check() {
       try {
-        const { data, error } = await (supabase as any).rpc('get_shared_evolution');
-        if (error || !data) {
-          setEnabled(false);
-        } else {
-          const v = data as { enabled?: boolean };
-          setEnabled(!!v.enabled);
-        }
+        const data = (await api.get('system_settings', { key: 'shared_evolution' })) as any[];
+        const row = data?.[0];
+        setEnabled(!!row?.value?.enabled);
       } catch {
         setEnabled(false);
       } finally {

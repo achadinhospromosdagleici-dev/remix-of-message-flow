@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { readFileAsText } from '@/utils/fileReader';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { getUserId } from '@/services/user';
 
 const BLACKLIST_KEY = 'messageflow_blacklist';
@@ -21,20 +21,19 @@ const OPT_OUT_KEYWORDS = ['SAIR', 'PARAR', 'CANCELAR', 'STOP', 'REMOVER', 'NAO Q
 async function saveBlacklistToDb(list: string[]): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('blacklist').delete().eq('user_id', userId);
+  const existing = await api.get('blacklist');
+  for (const row of existing || []) {
+    if (row?.id) await api.del('blacklist', row.id).catch(() => {});
+  }
   for (const phone of list) {
-    await supabase.from('blacklist').upsert({
-      user_id: userId,
-      phone,
-      reason: 'manual',
-    }, { onConflict: 'user_id,phone' });
+    await api.upsert('blacklist', { phone, reason: 'manual' }, 'user_id,phone');
   }
 }
 
 async function loadBlacklistFromDb(): Promise<string[]> {
   const userId = getUserId();
   if (!userId) return [];
-  const { data } = await supabase.from('blacklist').select('phone').eq('user_id', userId);
+  const data = await api.get('blacklist');
   return data?.map((t: any) => t.phone) ?? [];
 }
 

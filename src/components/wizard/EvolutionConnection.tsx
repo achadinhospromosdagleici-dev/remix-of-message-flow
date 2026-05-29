@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Smartphone, Link2, Unlink, Loader2, Eye, EyeOff, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, Plus, List, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import {
   EvolutionCredentials,
   EvolutionInstance,
@@ -106,12 +106,13 @@ export function EvolutionConnection({ onInstancesLoaded }: EvolutionConnectionPr
   const registerUserInstance = async (instance: EvolutionInstance) => {
     if (!user?.id) return;
     try {
-      await (supabase as any).rpc('register_user_instance', {
-        p_user_id: user.id,
-        p_instance_name: instance.instanceName,
-        p_phone: instance.phone || '',
-        p_profile_name: instance.profileName || ''
-      });
+      await api.upsert('user_instances', {
+        user_id: user.id,
+        instance_name: instance.instanceName,
+        phone: instance.phone || '',
+        profile_name: instance.profileName || '',
+        status: 'connected',
+      }, 'user_id,instance_name');
     } catch (err) {
       console.error('Error registering user instance:', err);
     }

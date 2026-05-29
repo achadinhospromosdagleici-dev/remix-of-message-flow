@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Smile, Sticker, Mic, Square, Trash2, Loader2, Plus, Check, X as XIcon, Library } from 'lucide-react';
 import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   Dialog,
@@ -55,16 +55,9 @@ export function MessageComposerExtras({ onInsertText, onMediaReady }: Props) {
     if (!user) return;
     setLoadingLib(true);
     try {
-      const { data, error } = await (supabase as any)
-        .from('media_library')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('media_type', kind)
-        .order('created_at', { ascending: false })
-        .limit(60);
-      if (error) throw error;
-      if (kind === 'sticker') setStickers((data || []) as MediaItem[]);
-      else setAudios((data || []) as MediaItem[]);
+      const data = (await api.get('media_library', { media_type: kind })) || [];
+      if (kind === 'sticker') setStickers(data as MediaItem[]);
+      else setAudios(data as MediaItem[]);
     } catch (err: any) {
       toast.error(`Falha ao carregar biblioteca: ${err.message || ''}`);
     } finally {
@@ -82,13 +75,17 @@ export function MessageComposerExtras({ onInsertText, onMediaReady }: Props) {
   };
 
   const uploadFile = async (file: File | Blob, folder: string, filename: string, contentType: string) => {
-    const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${filename}`;
-    const { error } = await supabase.storage
-      .from('campaign-media')
-      .upload(path, file, { contentType, upsert: false });
-    if (error) throw error;
-    const { data } = supabase.storage.from('campaign-media').getPublicUrl(path);
-    return data.publicUrl;
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('auth_token');
+    const res = await fetch('/api/upload', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    return data.url;
   };
 
   const saveToLibrary = async (item: {
@@ -100,7 +97,7 @@ export function MessageComposerExtras({ onInsertText, onMediaReady }: Props) {
   }) => {
     if (!user) return;
     try {
-      await (supabase as any).from('media_library').insert({
+      await api.post('media_library', {
         user_id: user.id,
         ...item,
       });
@@ -148,7 +145,7 @@ export function MessageComposerExtras({ onInsertText, onMediaReady }: Props) {
 
   const deleteItem = async (item: MediaItem) => {
     try {
-      await (supabase as any).from('media_library').delete().eq('id', item.id);
+      await api.del('media_library', item.id);
       if (item.media_type === 'sticker') setStickers(s => s.filter(x => x.id !== item.id));
       else setAudios(a => a.filter(x => x.id !== item.id));
       toast.success('Removido da biblioteca');

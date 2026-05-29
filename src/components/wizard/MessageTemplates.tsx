@@ -10,7 +10,7 @@ import {
   Tag,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { generateId } from '@/lib/id';
 import { getUserId } from '@/services/user';
 
@@ -28,21 +28,24 @@ const TEMPLATES_KEY = 'messageflow_templates';
 async function saveTemplatesToDb(templates: MessageTemplate[]): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('message_templates').delete().eq('user_id', userId);
+  const existing = (await api.get('message_templates')) || [];
+  for (const row of existing) {
+    if (row?.id) await api.del('message_templates', row.id).catch(() => {});
+  }
   for (const t of templates) {
-    await supabase.from('message_templates').upsert({
+    await api.upsert('message_templates', {
       user_id: userId,
       name: t.name,
       content: t.content,
       media_type: 'text',
-    }, { onConflict: 'user_id,name' });
+    }, 'user_id,name');
   }
 }
 
 async function loadTemplatesFromDb(): Promise<MessageTemplate[]> {
   const userId = getUserId();
   if (!userId) return defaultTemplates;
-  const { data } = await supabase.from('message_templates').select('*').eq('user_id', userId);
+  const data = (await api.get('message_templates')) || [];
   if (!data?.length) return defaultTemplates;
   return data.map((t: any) => ({
     id: t.id,

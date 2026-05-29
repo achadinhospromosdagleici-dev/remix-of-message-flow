@@ -7,6 +7,9 @@ import { existsSync } from 'fs';
 
 import { initDatabase } from './db/init.js';
 import authRoutes from './routes/auth.js';
+import dbRoutes from './routes/db.js';
+import linkRedirectRoutes from './routes/linkRedirect.js';
+import uploadRoutes from './routes/upload.js';
 import { requireAuth } from './middleware/auth.js';
 
 import proxyWuzapi from './routes/proxy/wuzapi.js';
@@ -37,6 +40,13 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+
+app.use('/api/db', requireAuth, dbRoutes);
+
+app.use('/api', linkRedirectRoutes);
+app.use('/api', uploadRoutes);
+
+app.use('/uploads', express.static(join(__dirname, 'uploads')));
 
 app.use('/api/proxy/wuzapi', requireAuth, proxyWuzapi);
 app.use('/api/proxy/unoapi', requireAuth, proxyUnoapi);
@@ -73,12 +83,16 @@ async function start() {
     console.warn('[server] Database init failed, continuing without DB:', err.message);
   }
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`[server] Rodando na porta ${PORT}`);
     console.log(`[server] Auth routes:`);
     console.log(`  POST /api/auth/signup`);
     console.log(`  POST /api/auth/login`);
     console.log(`  GET  /api/auth/me`);
+    console.log(`[server] DB CRUD (protegido por JWT):`);
+    console.log(`  GET/POST/PUT/DEL /api/db/:table`);
+    console.log(`[server] Link redirect:`);
+    console.log(`  POST /api/link-redirect`);
     console.log(`[server] Proxies (protegidas por JWT):`);
     console.log(`  POST /api/proxy/wuzapi`);
     console.log(`  POST /api/proxy/unoapi`);

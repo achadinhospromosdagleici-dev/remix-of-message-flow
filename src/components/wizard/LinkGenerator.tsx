@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Link2, Plus, Copy, Trash2, BarChart3, QrCode, Download, ExternalLink, Loader2, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from '@/services/api';
 import { toast } from "sonner";
 import { getUserId } from '@/services/user';
 
@@ -54,12 +54,12 @@ export function LinkGenerator() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("short_links")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) toast.error("Erro ao carregar links");
-    else setLinks(data as ShortLink[]);
+    try {
+      const data = (await api.get("short_links")) || [];
+      setLinks(data as ShortLink[]);
+    } catch {
+      toast.error("Erro ao carregar links");
+    }
     setLoading(false);
   };
 
@@ -75,19 +75,24 @@ export function LinkGenerator() {
     const userId = getUserId();
     if (!userId) { setCreating(false); return toast.error("Faça login"); }
 
-    const { error } = await supabase.from("short_links").insert({
-      user_id: userId,
-      slug,
-      title: title || null,
-      phone: cleanPhone,
-      message: message || null,
-    });
-    setCreating(false);
-    if (error) {
-      if (error.code === "23505") toast.error("Esse slug já está em uso, escolha outro");
-      else toast.error("Erro ao criar link");
+    try {
+      await api.post("short_links", {
+        user_id: userId,
+        slug,
+        title: title || null,
+        phone: cleanPhone,
+        message: message || null,
+      });
+    } catch (err: any) {
+      setCreating(false);
+      if (err.message?.includes("duplicate") || err.message?.includes("23505")) {
+        toast.error("Esse slug já está em uso, escolha outro");
+      } else {
+        toast.error("Erro ao criar link");
+      }
       return;
     }
+    setCreating(false);
     toast.success("Link criado!");
     setPhone(""); setMessage(""); setTitle(""); setCustomSlug("");
     load();
@@ -95,19 +100,22 @@ export function LinkGenerator() {
 
   const deleteLink = async (id: string) => {
     if (!confirm("Excluir este link? Os cliques registrados serão perdidos.")) return;
-    const { error } = await supabase.from("short_links").delete().eq("id", id);
-    if (error) return toast.error("Erro ao excluir");
-    toast.success("Link excluído");
-    setLinks(links.filter(l => l.id !== id));
+    try {
+      await api.del("short_links", id);
+      toast.success("Link excluído");
+      setLinks(links.filter(l => l.id !== id));
+    } catch {
+      toast.error("Erro ao excluir");
+    }
   };
 
   const toggleActive = async (link: ShortLink) => {
-    const { error } = await supabase
-      .from("short_links")
-      .update({ is_active: !link.is_active })
-      .eq("id", link.id);
-    if (error) return toast.error("Erro");
-    setLinks(links.map(l => l.id === link.id ? { ...l, is_active: !l.is_active } : l));
+    try {
+      await api.put("short_links", link.id, { is_active: !link.is_active });
+      setLinks(links.map(l => l.id === link.id ? { ...l, is_active: !l.is_active } : l));
+    } catch {
+      toast.error("Erro");
+    }
   };
 
   const copyUrl = (slug: string) => {
@@ -257,13 +265,12 @@ function StatsModal({ link, onClose }: { link: ShortLink; onClose: () => void })
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("link_clicks")
-        .select("id,country,city,device,browser,os,utm_source,referrer,clicked_at")
-        .eq("link_id", link.id)
-        .order("clicked_at", { ascending: false })
-        .limit(500);
-      setClicks((data as ClickRow[]) || []);
+      try {
+        const data = (await api.get("link_clicks", { link_id: link.id })) || [];
+        setClicks(data as ClickRow[]);
+      } catch {
+        setClicks([]);
+      }
       setLoading(false);
     })();
   }, [link.id]);

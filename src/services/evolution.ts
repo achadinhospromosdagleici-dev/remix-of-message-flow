@@ -1,9 +1,9 @@
 // Evolution API Service
 // Manages WhatsApp connection via Evolution API with edge function proxy
 
-import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
 import { getUserId } from '@/services/user';
+import { api } from '@/services/api';
 
 export interface EvolutionCredentials {
   baseUrl: string;
@@ -24,23 +24,19 @@ const STORAGE_KEY = 'evolution_credentials';
 async function saveEvoToDb(creds: EvolutionCredentials): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('evolution_settings').upsert({
-    user_id: userId,
+  await api.upsert('evolution_settings', {
     base_url: creds.baseUrl,
     api_key: creds.apiKey,
     instance_name: creds.instanceName,
-  }, { onConflict: 'user_id' });
+  }, 'user_id');
 }
 
 async function loadEvoFromDb(): Promise<EvolutionCredentials | null> {
   try {
     const userId = getUserId();
     if (!userId) return null;
-    const { data, error } = await supabase.from('evolution_settings').select('*').eq('user_id', userId).maybeSingle();
-    if (error) {
-      console.error('Error loading evolution from DB:', error);
-      return null;
-    }
+    const rows = await api.get('evolution_settings');
+    const data = rows?.[0];
     if (!data) return null;
     return {
       baseUrl: data.base_url,
@@ -78,7 +74,9 @@ export async function clearEvolutionCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('evolution_settings').delete().eq('user_id', userId);
+  const rows = await api.get('evolution_settings');
+  const data = rows?.[0];
+  if (data?.id) await api.del('evolution_settings', data.id);
 }
 
 // ── Shared Evolution (fallback for trial users) ──

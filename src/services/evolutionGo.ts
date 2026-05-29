@@ -1,9 +1,9 @@
 // Evolution Go Service
 // Manages WhatsApp connection via Evolution Go API
 
-import { supabase } from '@/integrations/supabase/client';
 import { proxyCall } from './proxy';
 import { getUserId } from '@/services/user';
+import { api } from '@/services/api';
 
 export interface EvolutionGoCredentials {
   baseUrl: string;
@@ -24,23 +24,19 @@ const STORAGE_KEY = 'evolution_go_credentials';
 async function saveEvoGoToDb(creds: EvolutionGoCredentials): Promise<void> {
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('evolution_go_settings').upsert({
-    user_id: userId,
+  await api.upsert('evolution_go_settings', {
     base_url: creds.baseUrl,
     api_key: creds.apiKey,
     instance_name: creds.instanceName,
-  }, { onConflict: 'user_id' });
+  }, 'user_id');
 }
 
 async function loadEvoGoFromDb(): Promise<EvolutionGoCredentials | null> {
   try {
     const userId = getUserId();
     if (!userId) return null;
-    const { data, error } = await supabase.from('evolution_go_settings').select('*').eq('user_id', userId).maybeSingle();
-    if (error) {
-      console.error('Error loading evolution-go from DB:', error);
-      return null;
-    }
+    const rows = await api.get('evolution_go_settings');
+    const data = rows?.[0];
     if (!data) return null;
     return {
       baseUrl: data.base_url,
@@ -78,7 +74,9 @@ export async function clearEvolutionGoCredentials(): Promise<void> {
   localStorage.removeItem(STORAGE_KEY);
   const userId = getUserId();
   if (!userId) return;
-  await supabase.from('evolution_go_settings').delete().eq('user_id', userId);
+  const rows = await api.get('evolution_go_settings');
+  const data = rows?.[0];
+  if (data?.id) await api.del('evolution_go_settings', data.id);
 }
 
 export function isEvolutionGoConnected(): boolean {

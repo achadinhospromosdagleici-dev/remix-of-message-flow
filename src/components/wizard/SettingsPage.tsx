@@ -7,7 +7,7 @@ import { UnoApiSettings } from './UnoApiSettings';
 import { WuzapiSettings } from './WuzapiSettings';
 import { WuzapiConnection } from './WuzapiConnection';
 import { ChatwootInbox } from '@/services/chatwoot';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { getUserId } from '@/services/user';
 
 interface SettingsPageProps {
@@ -88,11 +88,12 @@ function AIGatewaySettings() {
     async function load() {
       const userId = getUserId();
       if (!userId) return;
-      const { data } = await supabase.from('ai_settings').select('*').eq('user_id', userId).maybeSingle();
-      if (data) {
-        setProvider(data.provider || 'openai');
-        setApiKey(data.api_key || '');
-        setModel(data.model || 'gpt-4o-mini');
+      const data = (await api.get('ai_settings')) as any[] | null;
+      const row = data?.[0];
+      if (row) {
+        setProvider(row.provider || 'openai');
+        setApiKey(row.api_key || '');
+        setModel(row.model || 'gpt-4o-mini');
       }
     }
     load();
@@ -101,12 +102,12 @@ function AIGatewaySettings() {
   const handleSave = async () => {
     const userId = getUserId();
     if (userId) {
-      await supabase.from('ai_settings').upsert({
+      await api.upsert('ai_settings', {
         user_id: userId,
         provider,
         api_key: apiKey,
         model
-      }, { onConflict: 'user_id' });
+      }, 'user_id');
     }
     import('sonner').then(({ toast }) => toast.success('Configuração salva!'));
   };

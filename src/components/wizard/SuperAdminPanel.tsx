@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import {
@@ -47,23 +47,23 @@ export function SuperAdminPanel() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [profRes, rolesRes, settingsRes] = await Promise.all([
-        (supabase as any).from('profiles').select('*').order('created_at', { ascending: false }),
-        (supabase as any).from('user_roles').select('user_id, role'),
-        (supabase as any).from('system_settings').select('value').eq('key', 'shared_evolution').maybeSingle(),
+      const [profilesData, rolesData, settingsData] = await Promise.all([
+        api.get('profiles') as Promise<ProfileRow[]>,
+        api.get('user_roles') as Promise<Array<{ user_id: string; role: string }>>,
+        api.get('system_settings', { key: 'shared_evolution' }),
       ]);
 
       const rolesMap = new Map<string, string[]>();
-      ((rolesRes.data as Array<{ user_id: string; role: string }>) || []).forEach(r => {
+      (rolesData || []).forEach(r => {
         if (!rolesMap.has(r.user_id)) rolesMap.set(r.user_id, []);
         rolesMap.get(r.user_id)!.push(r.role);
       });
 
-      const list = ((profRes.data as ProfileRow[]) || []).map(p => ({ ...p, roles: rolesMap.get(p.id) || [] }));
+      const list = (profilesData || []).map(p => ({ ...p, roles: rolesMap.get(p.id) || [] }));
       setProfiles(list);
 
-      if (settingsRes.data?.value) {
-        const v = settingsRes.data.value as SharedEvolution;
+      if (settingsData?.[0]?.value) {
+        const v = settingsData[0].value as SharedEvolution;
         setShared({ baseUrl: v.baseUrl || '', apiKey: v.apiKey || '', enabled: !!v.enabled });
       }
     } catch (err: any) {
@@ -76,11 +76,13 @@ export function SuperAdminPanel() {
   useEffect(() => { loadAll(); }, []);
 
   const toggleActive = async (p: ProfileRow) => {
-    const { error } = await (supabase as any)
-      .from('profiles').update({ is_active: !p.is_active }).eq('id', p.id);
-    if (error) return toast.error(error.message);
-    toast.success(p.is_active ? 'Conta desativada' : 'Conta ativada');
-    loadAll();
+    try {
+      await api.put('profiles', p.id, { is_active: !p.is_active });
+      toast.success(p.is_active ? 'Conta desativada' : 'Conta ativada');
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const startEditTrial = (p: ProfileRow) => {
@@ -89,12 +91,14 @@ export function SuperAdminPanel() {
   };
 
   const saveTrial = async (id: string) => {
-    const { error } = await (supabase as any)
-      .from('profiles').update({ trial_ends_at: new Date(editTrial).toISOString() }).eq('id', id);
-    if (error) return toast.error(error.message);
-    toast.success('Trial atualizado');
-    setEditingId(null);
-    loadAll();
+    try {
+      await api.put('profiles', id, { trial_ends_at: new Date(editTrial).toISOString() });
+      toast.success('Trial atualizado');
+      setEditingId(null);
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const extendTrial = async (p: ProfileRow, days: number) => {
@@ -102,29 +106,34 @@ export function SuperAdminPanel() {
       ? new Date(p.trial_ends_at)
       : new Date();
     base.setDate(base.getDate() + days);
-    const { error } = await (supabase as any)
-      .from('profiles').update({ trial_ends_at: base.toISOString() }).eq('id', p.id);
-    if (error) return toast.error(error.message);
-    toast.success(`+${days} dia(s)`);
-    loadAll();
+    try {
+      await api.put('profiles', p.id, { trial_ends_at: base.toISOString() });
+      toast.success(`+${days} dia(s)`);
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const deleteProfile = async (p: ProfileRow) => {
     if (p.id === user?.id) return toast.error('Você não pode excluir a si mesmo');
     if (!confirm(`Excluir conta ${p.email}? Os dados de auth dela permanecerão até serem removidos manualmente.`)) return;
-    const { error } = await (supabase as any).from('profiles').delete().eq('id', p.id);
-    if (error) return toast.error(error.message);
-    toast.success('Perfil removido');
-    loadAll();
+    try {
+      await api.del('profiles', p.id);
+      toast.success('Perfil removido');
+      loadAll();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const saveShared = async () => {
     setSavingShared(true);
     try {
-      const { error } = await (supabase as any).from('system_settings')
-        .update({ value: shared, updated_by: user?.id })
-        .eq('key', 'shared_evolution');
-      if (error) throw error;
+      const rows = (await api.get('system_settings', { key: 'shared_evolution' })) || [];
+      if (rows?.[0]?.id) {
+        await api.put('system_settings', rows[0].id, { value: shared, updated_by: user?.id });
+      }
       toast.success('Evolution compartilhada salva');
     } catch (err: any) {
       toast.error(err.message);

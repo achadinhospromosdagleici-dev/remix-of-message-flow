@@ -28,7 +28,7 @@ import {
   extractPhoneFromJid,
 } from '@/services/wuzapi';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { ConversationsPanel } from './ConversationsPanel';
 
 type ApiSource = 'unoapi' | 'evolution' | 'evolution-go' | 'wuzapi';
@@ -132,13 +132,9 @@ export function InstancesManager() {
     // WuzAPI
     if (hasWuzapi && user?.id) {
       try {
-        const { data, error } = await supabase
-          .from('wuzapi_instances')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+        const data = await api.get('wuzapi_instances', { order: 'created_at.desc' });
 
-        if (!error && data) {
+        if (data?.length) {
           allInstances.push(...data.map((i: any): InstanceInfo => ({
             id: `wuz_${i.name}`,
             name: i.name,
@@ -170,12 +166,9 @@ export function InstancesManager() {
       } else if (source === 'wuzapi') {
         const creds = await loadWuzapiSettings();
         if (creds && user?.id) {
-          const { data: dbInstances } = await supabase
-            .from('wuzapi_instances')
-            .select('user_token, name, phone')
-            .eq('user_id', user.id);
+          const dbInstances = await api.get('wuzapi_instances');
           
-          const matched = dbInstances?.find(di => di.name === instanceName || di.phone === instanceName);
+          const matched = dbInstances?.find((di: any) => di.name === instanceName || di.phone === instanceName);
           if (matched?.user_token) {
             await connectWuzapi(creds.baseUrl, matched.user_token);
             const qr = await getWuzapiQRCode(creds.baseUrl, matched.user_token);
@@ -224,12 +217,9 @@ export function InstancesManager() {
         } else if (source === 'wuzapi') {
           const creds = await loadWuzapiSettings();
           if (creds && user?.id) {
-            const { data: dbInstances } = await supabase
-              .from('wuzapi_instances')
-              .select('user_token, name, phone')
-              .eq('user_id', user.id);
+            const dbInstances = await api.get('wuzapi_instances');
             
-            const matched = dbInstances?.find(di => di.name === instanceName || di.phone === instanceName);
+            const matched = dbInstances?.find((di: any) => di.name === instanceName || di.phone === instanceName);
               if (matched?.user_token) {
                 const status = await getWuzapiStatus(creds.baseUrl, matched.user_token);
                 connected = !!status.connected;
