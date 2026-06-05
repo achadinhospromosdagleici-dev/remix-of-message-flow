@@ -35,6 +35,8 @@ import { sendWuzapiMessage } from './wuzapi-sender';
 import { FollowUpConfig } from '@/components/wizard/FollowUpSettings';
 import { generateId } from '@/lib/id';
 import { msUntilAllowed, sleepCapped } from '@/utils/schedule';
+import { updateCampaignProgress, pauseCampaign } from './campaigns';
+import { campaignManager } from './campaignManager';
 
 export interface SendProgress {
   current: number;
@@ -209,6 +211,8 @@ export async function sendCampaign(
   onProgress: ProgressCallback,
   abortSignal?: AbortSignal,
   schedule?: { allowedWeekDays?: number[]; allowedTimes?: string[] },
+  campaignId?: string,
+  startIndex?: number,
 ): Promise<SendProgress> {
   if (selectedPhoneNumbers.length === 0) throw new Error('Nenhum número remetente selecionado');
 
@@ -305,11 +309,20 @@ export async function sendCampaign(
   }
 
   let phoneIndex = 0;
+  const effectiveStart = startIndex || 0;
 
-  for (let i = 0; i < contacts.length; i++) {
+  for (let i = effectiveStart; i < contacts.length; i++) {
     if (abortSignal?.aborted) {
       progress.status = 'paused';
       addLog('⏸️ Campanha pausada pelo usuário', 'warning');
+      if (campaignId) {
+        await pauseCampaign(campaignId, {
+          sent_count: progress.sent,
+          failed_count: progress.failed,
+          replied_count: progress.replied,
+          current_index: i,
+        }).catch(() => {});
+      }
       return progress;
     }
 
@@ -604,6 +617,16 @@ export async function sendCampaign(
       onProgress({ ...progress });
     }
 
+    // Periodic progress save to DB
+    if (campaignId && i % 10 === 0 && i > effectiveStart) {
+      await updateCampaignProgress(campaignId, {
+        sent_count: progress.sent,
+        failed_count: progress.failed,
+        replied_count: progress.replied,
+        current_index: i,
+      }).catch(() => {});
+    }
+
     // Interval
     if (i < contacts.length - 1) {
       const waitTime = settings.intervalType === 'fixed'
@@ -617,5 +640,15 @@ export async function sendCampaign(
   progress.status = 'completed';
   addLog(`🎉 Campanha finalizada! ${progress.sent} enviadas, ${progress.failed} falhas`, 'success');
   onProgress({ ...progress });
+
+  if (campaignId) {
+    await updateCampaignProgress(campaignId, {
+      sent_count: progress.sent,
+      failed_count: progress.failed,
+      replied_count: progress.replied,
+      current_index: contacts.length,
+    }).catch(() => {});
+  }
+
   return progress;
 }

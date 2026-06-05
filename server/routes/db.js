@@ -9,6 +9,7 @@ const USER_SCOPED_TABLES = new Set([
   'wuzapi_instances', 'user_instances', 'user_settings',
   'blacklist', 'phone_mappings', 'message_templates',
   'media_library', 'short_links', 'profiles', 'user_roles',
+  'campaigns',
 ]);
 
 const ADMIN_TABLES = new Set(['system_settings']);

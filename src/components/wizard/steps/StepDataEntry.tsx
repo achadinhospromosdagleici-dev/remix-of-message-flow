@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useWizard, DataRow } from '@/contexts/WizardContext';
 import { validatePhoneNumber, parseCSVLine, detectDelimiter } from '@/utils/phoneValidation';
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Table, FileText, ListOrdered, Plus } from 'lucide-react';
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Table, ListOrdered, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { generateId } from '@/lib/id';
 import { SpreadsheetPasteArea } from '../SpreadsheetPasteArea';
@@ -94,7 +94,7 @@ export function StepDataEntry() {
     <div className="space-y-4">
       {/* Toggle between paste areas */}
       {!showPasteArea && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Textarea paste area */}
           <div 
             className={`relative border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer ${
@@ -109,37 +109,6 @@ export function StepDataEntry() {
               <Table className="w-8 h-8 mx-auto text-muted-foreground" />
               <div className="font-medium">Planilha</div>
               <p className="text-xs text-muted-foreground">Cole ou arraste dados no formato de planilha</p>
-            </div>
-          </div>
-
-          {/* Textarea paste area (simple) */}
-          <div 
-            className={`relative border-2 border-dashed rounded-xl p-4 transition-all cursor-pointer ${
-              isDragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
-            }`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file && (file.type === 'text/plain' || file.name.endsWith('.csv') || file.name.endsWith('.txt'))) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const text = event.target?.result as string;
-                  if (text) {
-                    setPasteData(text);
-                    processData(text);
-                  }
-                };
-                reader.readAsText(file);
-              }
-            }}
-          >
-            <div className="text-center space-y-2">
-              <FileText className="w-8 h-8 mx-auto text-muted-foreground" />
-              <div className="font-medium">Texto simples</div>
-              <p className="text-xs text-muted-foreground">Cole dados de texto delimitados</p>
             </div>
           </div>
 
@@ -208,7 +177,7 @@ export function StepDataEntry() {
             Como importar dados:
           </div>
           <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
-            <li>Escolha uma das opções acima (Planilha, Texto Simples ou Upload)</li>
+            <li>Escolha uma das opções acima (Planilha ou Upload)</li>
             <li>Cole ou arraste dados no formato: <strong>telefone, nome, empresa...</strong></li>
             <li>A primeira linha será usada como cabeçalho</li>
             <li>O sistema detectará automaticamente números de telefone</li>

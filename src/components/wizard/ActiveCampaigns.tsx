@@ -12,6 +12,9 @@ import {
   XCircle,
   AlertTriangle,
 } from 'lucide-react';
+import { campaignManager } from '@/services/campaignManager';
+import { deleteCampaign, updateCampaignStatus } from '@/services/campaigns';
+import { toast } from 'sonner';
 
 export interface ActiveCampaign {
   id: string;
@@ -44,6 +47,47 @@ export function ActiveCampaigns({
   onResend,
   onNewCampaign,
 }: ActiveCampaignsProps) {
+  const handlePause = async (id: string) => {
+    try {
+      await campaignManager.pause(id);
+      onPause(id);
+      toast.success('Campanha pausada');
+    } catch (err: any) {
+      toast.error(`Erro ao pausar: ${err.message}`);
+    }
+  };
+
+  const handleResume = async (id: string) => {
+    try {
+      await updateCampaignStatus(id, 'running');
+      onResume(id);
+      toast.success('Campanha retomada');
+    } catch (err: any) {
+      toast.error(`Erro ao retomar: ${err.message}`);
+    }
+  };
+
+  const handleCancel = async (id: string) => {
+    if (!confirm('Deseja realmente cancelar esta campanha?')) return;
+    try {
+      await campaignManager.cancel(id);
+      onCancel(id);
+      toast.success('Campanha cancelada');
+    } catch (err: any) {
+      toast.error(`Erro ao cancelar: ${err.message}`);
+    }
+  };
+
+  const handleResend = async (id: string) => {
+    try {
+      await updateCampaignStatus(id, 'running');
+      onResend(id);
+      toast.success('Reenviando campanha');
+    } catch (err: any) {
+      toast.error(`Erro ao reenviar: ${err.message}`);
+    }
+  };
+
   const drafts = campaigns.filter(c => c.status === 'paused');
   const running = campaigns.filter(c => c.status === 'running');
   const all = campaigns;
@@ -235,7 +279,7 @@ export function ActiveCampaigns({
                       <div className="flex items-center justify-end gap-2">
                         {campaign.status === 'running' && (
                           <button
-                            onClick={() => onPause(campaign.id)}
+                            onClick={() => handlePause(campaign.id)}
                             className="w-9 h-9 rounded-full bg-warning text-warning-foreground flex items-center justify-center hover:bg-warning/80 transition-colors"
                             title="Pausar"
                           >
@@ -244,7 +288,7 @@ export function ActiveCampaigns({
                         )}
                         {campaign.status === 'paused' && (
                           <button
-                            onClick={() => onResume(campaign.id)}
+                            onClick={() => handleResume(campaign.id)}
                             className="w-9 h-9 rounded-full bg-success text-success-foreground flex items-center justify-center hover:bg-success/80 transition-colors"
                             title="Retomar"
                           >
@@ -253,7 +297,7 @@ export function ActiveCampaigns({
                         )}
                         {(campaign.status === 'completed' || campaign.status === 'error') && (
                           <button
-                            onClick={() => onResend(campaign.id)}
+                            onClick={() => handleResend(campaign.id)}
                             className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-colors"
                             title="Reenviar"
                           >
@@ -262,7 +306,7 @@ export function ActiveCampaigns({
                         )}
                         {campaign.status !== 'cancelled' && campaign.status !== 'completed' && (
                           <button
-                            onClick={() => onCancel(campaign.id)}
+                            onClick={() => handleCancel(campaign.id)}
                             className="w-9 h-9 rounded-full bg-destructive/10 text-destructive flex items-center justify-center hover:bg-destructive/20 transition-colors"
                             title="Cancelar"
                           >

@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { useWizard } from '@/contexts/WizardContext';
 import { Campaign } from '../CampaignHistory';
 import { sendCampaign, SendProgress, CampaignMessage } from '@/services/campaignSender';
+import { createCampaign } from '@/services/campaigns';
+import { campaignManager } from '@/services/campaignManager';
 import { loadUnoApiCredentials } from '@/services/unoapi';
 import { loadEvolutionCredentials } from '@/services/evolution';
 import { loadEvolutionGoCredentials } from '@/services/evolutionGo';
@@ -36,7 +38,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
     getValidCount, campaignHistory, addCampaign,
     unoApiConnected, followUpConfig, updateMetrics, scheduledCampaigns, addScheduledCampaign,
     cancelScheduledCampaign,
-    addActiveCampaign, updateActiveCampaign, clearWizard,
+    addActiveCampaign, updateActiveCampaign, removeActiveCampaign, clearWizard,
   } = useWizard();
   const [isSending, setIsSending] = useState(false);
   const [progress, setProgress] = useState<SendProgress | null>(null);
@@ -87,23 +89,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
     if (validContacts === 0) { toast.error('Nenhum contato válido para envio'); return; }
     if (messages.length === 0) { toast.error('Configure ao menos uma mensagem'); return; }
 
-    const campaignId = generateId();
     const campaignName = `Campanha ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-
-    // Add to active campaigns immediately so the home page shows progress
-    addActiveCampaign({
-      id: campaignId,
-      name: campaignName,
-      status: 'running',
-      totalContacts: validContacts,
-      sentCount: 0,
-      failedCount: 0,
-      repliedCount: 0,
-      createdAt: new Date(),
-    });
-
-    const controller = new AbortController();
-    abortRef.current = controller;
 
     const contactsData = validData.map(row => {
       const obj: Record<string, any> = {};
@@ -133,6 +119,73 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
         }
       : undefined;
 
+    // Persist campaign to database
+    let campaignId: string;
+    try {
+      const campaign = await createCampaign({
+        name: campaignName,
+        settings: {
+          intervalType: settings.intervalType,
+          fixedInterval: settings.fixedInterval,
+          minInterval: settings.minInterval,
+          maxInterval: settings.maxInterval,
+          sendType: settings.sendType,
+          useAI: settings.useAI,
+          messageRandomization: settings.messageRandomization,
+          instanceRandomization: settings.instanceRandomization,
+          selectedPhoneNumbers: selectedInstances,
+          followUpConfig: followUpConfig,
+        },
+        schedule: settings.scheduleEnabled
+          ? {
+              enabled: true,
+              weekDays: settings.scheduleWeekDays,
+              startTime: settings.scheduleStartTime,
+              endTime: settings.scheduleEndTime,
+            }
+          : null,
+        contacts: contactsData.map(c => ({
+          phone: c.numero || c.phone || '',
+          name: c.nome || c.name,
+          data: c,
+        })),
+        messages: campaignMessages.map(m => ({
+          content: m.content,
+          media_type: m.mediaType,
+          media_url: m.mediaUrl,
+          media_caption: m.mediaCaption,
+          media_filename: m.mediaFilename,
+          title: m.title,
+          footer: m.footer,
+          buttons: m.buttons as any,
+          link_url: m.linkUrl,
+        })),
+      });
+      campaignId = campaign.id;
+    } catch (err: any) {
+      console.error('[StepConfirmation] Failed to save campaign to DB:', err);
+      toast.error('Falha ao criar campanha no banco de dados');
+      return;
+    }
+
+    // Add to active campaigns immediately so the home page shows progress
+    addActiveCampaign({
+      id: campaignId,
+      name: campaignName,
+      status: 'running',
+      totalContacts: validContacts,
+      sentCount: 0,
+      failedCount: 0,
+      repliedCount: 0,
+      createdAt: new Date(),
+    });
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    campaignManager.register(campaignId, controller);
+
+    setIsSending(true);
+
     // Run send in background so we can close the wizard view
     void (async () => {
       try {
@@ -156,20 +209,10 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
           },
           controller.signal,
           schedule,
+          campaignId,
         );
 
-        const newCampaign: Campaign = {
-          id: campaignId,
-          name: campaignName,
-          date: new Date(),
-          totalContacts: validContacts,
-          sentCount: result.sent,
-          successCount: result.sent - result.failed,
-          failedCount: result.failed,
-          messages: messages.map(m => m.content),
-          status: result.failed === 0 ? 'completed' : 'partial',
-        };
-        addCampaign(newCampaign);
+        if (result.status === 'paused') return;
 
         updateActiveCampaign(campaignId, {
           status: result.failed === 0 ? 'completed' : (result.sent > 0 ? 'completed' : 'error'),
@@ -192,7 +235,9 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
         updateActiveCampaign(campaignId, { status: 'error' });
         toast.error(`Erro: ${err.message}`);
       } finally {
+        campaignManager.unregister(campaignId);
         abortRef.current = null;
+        setIsSending(false);
       }
     })();
 
@@ -203,7 +248,10 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
   };
 
   const handleStop = () => {
-    abortRef.current?.abort();
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     toast.warning('Campanha pausada');
   };
 
