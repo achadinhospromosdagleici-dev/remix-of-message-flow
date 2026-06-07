@@ -3,6 +3,8 @@ import { ActiveCampaign } from '@/components/wizard/ActiveCampaigns';
 import { Campaign } from '@/components/wizard/CampaignHistory';
 import { CampaignMessage } from './campaignSender';
 
+export type ContactStatus = 'pending' | 'processing' | 'sent' | 'failed' | 'ignored' | 'cancelled';
+
 export interface CampaignRecord {
   id: string;
   user_id: string;
@@ -14,6 +16,8 @@ export interface CampaignRecord {
   sent_count: number;
   failed_count: number;
   replied_count: number;
+  pending_count: number;
+  ignored_count: number;
   current_index: number;
   started_at: string | null;
   paused_at: string | null;
@@ -25,11 +29,16 @@ export interface CampaignRecord {
 export interface CampaignContactRecord {
   id: string;
   campaign_id: string;
+  order_index: number;
   phone: string;
   name: string | null;
   data: Record<string, unknown> | null;
-  status: 'pending' | 'sent' | 'failed' | 'replied';
+  status: ContactStatus;
   error: string | null;
+  error_message: string | null;
+  retry_count: number;
+  message_id: string | null;
+  attempted_at: string | null;
   sent_at: string | null;
   created_at: string;
 }
@@ -49,6 +58,14 @@ export interface CampaignMessageRecord {
   section: unknown | null;
   cards: unknown | null;
   msg_order: number;
+  created_at: string;
+}
+
+export interface CampaignAuditRecord {
+  id: string;
+  campaign_id: string;
+  action: string;
+  details: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -79,15 +96,18 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Campai
     settings: input.settings,
     schedule: input.schedule || null,
     total_contacts: input.contacts.length,
+    pending_count: input.contacts.length,
     started_at: new Date().toISOString(),
   });
 
   if (input.contacts.length > 0) {
-    const contactRows = input.contacts.map(c => ({
+    const contactRows = input.contacts.map((c, index) => ({
       campaign_id: campaign.id,
+      order_index: index,
       phone: c.phone,
       name: c.name || null,
       data: c.data || null,
+      status: 'pending',
     }));
     for (const row of contactRows) {
       await api.post('campaign_contacts', row);
@@ -127,11 +147,31 @@ export async function getCampaign(id: string): Promise<CampaignRecord> {
 }
 
 export async function getCampaignContacts(campaignId: string): Promise<CampaignContactRecord[]> {
-  return api.get('campaign_contacts', { campaign_id: campaignId, order: 'created_at.asc' }) as Promise<CampaignContactRecord[]>;
+  return api.get('campaign_contacts', { campaign_id: campaignId, order: 'order_index.asc' }) as Promise<CampaignContactRecord[]>;
 }
 
 export async function getCampaignMessages(campaignId: string): Promise<CampaignMessageRecord[]> {
   return api.get('campaign_messages', { campaign_id: campaignId, order: 'msg_order.asc' }) as Promise<CampaignMessageRecord[]>;
+}
+
+export async function getPendingContacts(campaignId: string): Promise<CampaignContactRecord[]> {
+  return api.get('campaign_contacts', { campaign_id: campaignId, status: 'pending', order: 'order_index.asc' }) as Promise<CampaignContactRecord[]>;
+}
+
+export async function getFailedContacts(campaignId: string): Promise<CampaignContactRecord[]> {
+  return api.get('campaign_contacts', { campaign_id: campaignId, status: 'failed', order: 'order_index.asc' }) as Promise<CampaignContactRecord[]>;
+}
+
+export async function getPendingOrFailedContacts(campaignId: string): Promise<CampaignContactRecord[]> {
+  const pending = await getPendingContacts(campaignId);
+  const failed = await getFailedContacts(campaignId);
+  const merged = [...pending, ...failed];
+  merged.sort((a, b) => a.order_index - b.order_index);
+  return merged;
+}
+
+export async function getCampaignContactsByStatus(campaignId: string, status: ContactStatus): Promise<CampaignContactRecord[]> {
+  return api.get('campaign_contacts', { campaign_id: campaignId, status, order: 'order_index.asc' }) as Promise<CampaignContactRecord[]>;
 }
 
 export async function updateCampaignStatus(
@@ -169,8 +209,47 @@ export async function updateCampaignProgress(
   await api.put('campaigns', id, data);
 }
 
+export async function updateCampaignCounts(
+  id: string,
+  data: { sent_count?: number; failed_count?: number; replied_count?: number; pending_count?: number; ignored_count?: number }
+): Promise<void> {
+  await api.put('campaigns', id, data);
+}
+
+export async function updateContactStatus(
+  contactId: string,
+  status: ContactStatus,
+  extra?: {
+    error?: string | null;
+    error_message?: string | null;
+    retry_count?: number;
+    message_id?: string | null;
+    attempted_at?: string | null;
+    sent_at?: string | null;
+  }
+): Promise<void> {
+  const updates: Record<string, unknown> = { status, ...extra };
+  await api.put('campaign_contacts', contactId, updates);
+}
+
 export async function deleteCampaign(id: string): Promise<void> {
   await api.del('campaigns', id);
+}
+
+export async function addAuditLog(
+  campaignId: string,
+  action: string,
+  details?: Record<string, unknown>
+): Promise<void> {
+  await api.post('campaign_audit', {
+    campaign_id: campaignId,
+    action,
+    details: details || null,
+  });
+}
+
+export async function loadCampaignAudit(campaignId: string): Promise<CampaignAuditRecord[]> {
+  return api.get('campaign_audit', { campaign_id: campaignId, order: 'created_at.asc' }) as Promise<CampaignAuditRecord[]>;
 }
 
 export function campaignRecordToActive(r: CampaignRecord): ActiveCampaign {

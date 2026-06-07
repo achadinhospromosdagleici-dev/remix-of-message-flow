@@ -1,0 +1,95 @@
+services:
+  # ── Evolution API (Node.js) ──────────────────────────────────
+  evolution-api:
+    profiles: ["evolution"]
+    image: atendai/evolution-api:latest
+    container_name: remix-evolution
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      DATABASE_ENABLED: false
+      CORS_ORIGIN: "*"
+      LANGUAGE: pt-BR
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - remix-net
+
+  # ── Evolution Go ─────────────────────────────────────────────
+  evolution-go:
+    profiles: ["evolution-go"]
+    image: evoapicloud/evolution-go:latest
+    container_name: remix-evolution-go
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    environment:
+      SERVER_PORT: 8080
+      CLIENT_NAME: evolution
+      GLOBAL_API_KEY: ${EVOLUTION_GO_API_KEY}
+      POSTGRES_AUTH_DB: postgresql://${PG_USER:-remix}:${PG_PASSWORD:-remix123}@${PG_HOST:-postgres}:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://${PG_USER:-remix}:${PG_PASSWORD:-remix123}@${PG_HOST:-postgres}:5432/evogo_users?sslmode=disable
+      LOG_LEVEL: info
+    networks:
+      - remix-net
+
+  # ── Redis (para UnoAPI) ──────────────────────────────────────
+  redis:
+    profiles: ["unoapi"]
+    image: redis:7-alpine
+    container_name: remix-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - remix-net
+
+  # ── UnoAPI ───────────────────────────────────────────────────
+  unoapi:
+    profiles: ["unoapi"]
+    image: clairton/unoapi-cloud:latest
+    container_name: remix-unoapi
+    restart: unless-stopped
+    ports:
+      - "9876:9876"
+    environment:
+      UNOAPI_AUTH_TOKEN: ${UNOAPI_API_KEY}
+      REDIS_URL: redis://redis:6379
+      IGNORE_GROUP_MESSAGES: "true"
+      IGNORE_BROADCAST_STATUSES: "true"
+      SEND_CONNECTION_STATUS: "true"
+      REJECT_CALLS: "true"
+    depends_on:
+      - redis
+    networks:
+      - remix-net
+
+  # ── WuzAPI ───────────────────────────────────────────────────
+  wuzapi:
+    profiles: ["wuzapi"]
+    image: asternic/wuzapi:latest
+    container_name: remix-wuzapi
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      WUZAPI_ADMIN_TOKEN: ${WUZAPI_ADMIN_TOKEN}
+    volumes:
+      - wuzapi_dbdata:/app/dbdata
+      - wuzapi_files:/app/files
+    networks:
+      - remix-net
+
+volumes:
+  evolution_instances:
+  redis_data:
+  wuzapi_dbdata:
+  wuzapi_files:
+
+networks:
+  remix-net:

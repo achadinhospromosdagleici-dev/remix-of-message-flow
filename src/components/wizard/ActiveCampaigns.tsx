@@ -12,9 +12,6 @@ import {
   XCircle,
   AlertTriangle,
 } from 'lucide-react';
-import { campaignManager } from '@/services/campaignManager';
-import { deleteCampaign, updateCampaignStatus } from '@/services/campaigns';
-import { toast } from 'sonner';
 
 export interface ActiveCampaign {
   id: string;
@@ -47,45 +44,21 @@ export function ActiveCampaigns({
   onResend,
   onNewCampaign,
 }: ActiveCampaignsProps) {
-  const handlePause = async (id: string) => {
-    try {
-      await campaignManager.pause(id);
-      onPause(id);
-      toast.success('Campanha pausada');
-    } catch (err: any) {
-      toast.error(`Erro ao pausar: ${err.message}`);
-    }
+  const handlePause = (campaignId: string) => {
+    onPause(campaignId);
   };
 
-  const handleResume = async (id: string) => {
-    try {
-      await updateCampaignStatus(id, 'running');
-      onResume(id);
-      toast.success('Campanha retomada');
-    } catch (err: any) {
-      toast.error(`Erro ao retomar: ${err.message}`);
-    }
+  const handleResume = (campaignId: string) => {
+    onResume(campaignId);
   };
 
-  const handleCancel = async (id: string) => {
+  const handleCancel = (campaignId: string) => {
     if (!confirm('Deseja realmente cancelar esta campanha?')) return;
-    try {
-      await campaignManager.cancel(id);
-      onCancel(id);
-      toast.success('Campanha cancelada');
-    } catch (err: any) {
-      toast.error(`Erro ao cancelar: ${err.message}`);
-    }
+    onCancel(campaignId);
   };
 
-  const handleResend = async (id: string) => {
-    try {
-      await updateCampaignStatus(id, 'running');
-      onResend(id);
-      toast.success('Reenviando campanha');
-    } catch (err: any) {
-      toast.error(`Erro ao reenviar: ${err.message}`);
-    }
+  const handleResend = (campaignId: string) => {
+    onResend(campaignId);
   };
 
   const drafts = campaigns.filter(c => c.status === 'paused');

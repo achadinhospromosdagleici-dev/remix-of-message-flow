@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useWizard } from '@/contexts/WizardContext';
 import { campaignManager } from '@/services/campaignManager';
-import { loadCampaigns, deleteCampaign, updateCampaignStatus, campaignRecordToActive, CampaignRecord, getCampaign, getCampaignContacts, getCampaignMessages } from '@/services/campaigns';
+import { loadCampaigns, deleteCampaign, updateCampaignStatus, campaignRecordToActive, CampaignRecord, getCampaign, getCampaignMessages, getPendingOrFailedContacts, addAuditLog } from '@/services/campaigns';
 import { sendCampaign, CampaignMessage } from '@/services/campaignSender';
 import { toast } from 'sonner';
 
@@ -66,6 +66,8 @@ export function CampaignsHome({ onNewCampaign, onResume }: { onNewCampaign: () =
   const handlePause = async (id: string) => {
     try {
       await campaignManager.pause(id);
+      await updateCampaignStatus(id, 'paused');
+      await addAuditLog(id, 'paused');
       updateActiveCampaign(id, { status: 'paused' });
       toast.success('Campanha pausada');
     } catch (err: any) {
@@ -76,12 +78,28 @@ export function CampaignsHome({ onNewCampaign, onResume }: { onNewCampaign: () =
   const handleResume = async (id: string) => {
     try {
       const record = await getCampaign(id);
-      const contacts = await getCampaignContacts(id);
       const messages = await getCampaignMessages(id);
 
-      const contactsData = contacts.map(c => {
+      // Carregar APENAS contatos pendentes ou com falha
+      const pendingContacts = await getPendingOrFailedContacts(id);
+
+      if (pendingContacts.length === 0) {
+        toast.info('Campanha já foi concluída — nenhum contato pendente');
+        await updateCampaignStatus(id, 'completed');
+        await addAuditLog(id, 'completed', { note: 'Nenhum contato pendente ao retomar' });
+        updateActiveCampaign(id, { status: 'completed' });
+        return;
+      }
+
+      const contactsData = pendingContacts.map(c => {
         const data = (c.data || {}) as Record<string, any>;
-        return { ...data, nome: data.nome || c.name, phone: c.phone };
+        return {
+          ...data,
+          nome: data.nome || c.name,
+          phone: c.phone,
+          _contactDbId: c.id,
+          _retryCount: c.retry_count,
+        };
       });
 
       const campaignMessages: CampaignMessage[] = messages.map(m => ({
@@ -115,13 +133,10 @@ export function CampaignsHome({ onNewCampaign, onResume }: { onNewCampaign: () =
           }
         : undefined;
 
-      const startIndex = record.current_index;
-
+      const controller = await campaignManager.resume(id);
       await updateCampaignStatus(id, 'running');
+      await addAuditLog(id, 'resumed', { pending: pendingContacts.length });
       updateActiveCampaign(id, { status: 'running' });
-
-      const controller = new AbortController();
-      campaignManager.register(id, controller);
 
       void (async () => {
         try {
@@ -133,9 +148,9 @@ export function CampaignsHome({ onNewCampaign, onResume }: { onNewCampaign: () =
             followUpConfig,
             (p) => {
               updateActiveCampaign(id, {
-                sentCount: p.sent,
-                failedCount: p.failed,
-                repliedCount: p.replied,
+                sentCount: p.sent + record.sent_count,
+                failedCount: p.failed + record.failed_count,
+                repliedCount: p.replied + record.replied_count,
                 currentContact: p.currentContact,
                 status: p.status === 'completed' ? 'completed'
                   : p.status === 'error' ? 'error'
@@ -146,19 +161,21 @@ export function CampaignsHome({ onNewCampaign, onResume }: { onNewCampaign: () =
             controller.signal,
             schedule,
             id,
-            startIndex,
           );
 
           if (result.status === 'paused') return;
 
+          const totalSent = result.sent + record.sent_count;
+          const totalFailed = result.failed + record.failed_count;
+
           updateActiveCampaign(id, {
             status: result.failed === 0 ? 'completed' : (result.sent > 0 ? 'completed' : 'error'),
-            sentCount: result.sent,
-            failedCount: result.failed,
-            repliedCount: result.replied,
+            sentCount: totalSent,
+            failedCount: totalFailed,
+            repliedCount: result.replied + record.replied_count,
           });
 
-          toast.success(`Campanha finalizada! ${result.sent} enviadas.`);
+          toast.success(`Campanha finalizada! ${totalSent} enviadas.`);
         } catch (err: any) {
           updateActiveCampaign(id, { status: 'error' });
           toast.error(`Erro: ${err.message}`);

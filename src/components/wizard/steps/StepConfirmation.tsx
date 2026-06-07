@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useWizard } from '@/contexts/WizardContext';
 import { Campaign } from '../CampaignHistory';
 import { sendCampaign, SendProgress, CampaignMessage } from '@/services/campaignSender';
-import { createCampaign } from '@/services/campaigns';
+import { createCampaign, getCampaignContacts, addAuditLog } from '@/services/campaigns';
 import { campaignManager } from '@/services/campaignManager';
 import { loadUnoApiCredentials } from '@/services/unoapi';
 import { loadEvolutionCredentials } from '@/services/evolution';
@@ -168,6 +168,26 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
       return;
     }
 
+    // Recarregar contatos do banco para obter IDs e order_index
+    let contactsWithDbIds: Record<string, any>[] = [];
+    try {
+      const dbContacts = await getCampaignContacts(campaignId);
+      contactsWithDbIds = dbContacts.map(c => ({
+        ...c.data,
+        nome: (c.data as any)?.nome || c.name,
+        phone: c.phone,
+        _contactDbId: c.id,
+        _retryCount: 0,
+      }));
+    } catch (err: any) {
+      console.error('[StepConfirmation] Failed to reload contacts:', err);
+      toast.error('Falha ao carregar contatos do banco');
+      return;
+    }
+
+    // Add audit log
+    await addAuditLog(campaignId, 'started', { total: validContacts });
+
     // Add to active campaigns immediately so the home page shows progress
     addActiveCampaign({
       id: campaignId,
@@ -190,7 +210,7 @@ export function StepConfirmation({ onCampaignStarted }: StepConfirmationProps = 
     void (async () => {
       try {
         const result = await sendCampaign(
-          contactsData,
+          contactsWithDbIds,
           campaignMessages,
           settings,
           selectedInstances,

@@ -18,6 +18,9 @@ import { SuperAdminPanel } from './SuperAdminPanel';
 import { LinkGenerator } from './LinkGenerator';
 import { useAuth } from '@/contexts/AuthContext';
 import { Crown, Clock } from 'lucide-react';
+import { campaignManager } from '@/services/campaignManager';
+import { updateCampaignStatus, addAuditLog } from '@/services/campaigns';
+import { toast } from 'sonner';
 import {
   SidebarProvider,
   SidebarTrigger,
@@ -111,10 +114,25 @@ export function WizardLayout() {
           <div className="space-y-6">
             <ActiveCampaigns
               campaigns={activeCampaigns}
-              onPause={(id) => updateActiveCampaign(id, { status: 'paused' })}
-              onResume={(id) => updateActiveCampaign(id, { status: 'running' })}
-              onCancel={(id) => updateActiveCampaign(id, { status: 'cancelled' })}
-              onResend={(id) => updateActiveCampaign(id, { status: 'running', sentCount: 0, failedCount: 0 })}
+              onPause={async (id) => {
+                await campaignManager.pause(id);
+                await updateCampaignStatus(id, 'paused');
+                await addAuditLog(id, 'paused');
+                updateActiveCampaign(id, { status: 'paused' });
+                toast.success('Campanha pausada');
+              }}
+              onResume={async (id) => {
+                toast.info('Redirecionando para a página de campanhas...');
+                setCurrentView('home');
+              }}
+              onCancel={async (id) => {
+                await campaignManager.cancel(id);
+                updateActiveCampaign(id, { status: 'cancelled' });
+              }}
+              onResend={async (id) => {
+                toast.info('Use a página "Suas Campanhas" para reenviar');
+                setCurrentView('home');
+              }}
               onNewCampaign={() => setCurrentView('campaign')}
             />
             <Dashboard metrics={metrics} />

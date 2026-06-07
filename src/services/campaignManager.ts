@@ -1,10 +1,14 @@
-import { updateCampaignStatus } from './campaigns';
+import { updateCampaignStatus, addAuditLog } from './campaigns';
 
 class CampaignManager {
   private controllers = new Map<string, AbortController>();
   private progressTimers = new Map<string, ReturnType<typeof setInterval>>();
 
   register(campaignId: string, controller: AbortController): void {
+    if (this.controllers.has(campaignId)) {
+      console.warn(`[CampaignManager] Campaign ${campaignId} already has a controller — aborting old one`);
+      this.controllers.get(campaignId)?.abort();
+    }
     this.controllers.set(campaignId, controller);
   }
 
@@ -25,7 +29,13 @@ class CampaignManager {
     this.clearProgressTimer(campaignId);
   }
 
-  async resume(campaignId: string): Promise<void> {
+  async resume(campaignId: string): Promise<AbortController> {
+    if (this.controllers.has(campaignId)) {
+      throw new Error('Campanha já está em execução');
+    }
+    const controller = new AbortController();
+    this.controllers.set(campaignId, controller);
+    return controller;
   }
 
   async cancel(campaignId: string): Promise<void> {
@@ -36,6 +46,7 @@ class CampaignManager {
     }
     this.clearProgressTimer(campaignId);
     await updateCampaignStatus(campaignId, 'cancelled');
+    await addAuditLog(campaignId, 'cancelled');
   }
 
   unregister(campaignId: string): void {

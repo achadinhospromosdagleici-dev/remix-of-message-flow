@@ -35,7 +35,7 @@ import { sendWuzapiMessage } from './wuzapi-sender';
 import { FollowUpConfig } from '@/components/wizard/FollowUpSettings';
 import { generateId } from '@/lib/id';
 import { msUntilAllowed, sleepCapped } from '@/utils/schedule';
-import { updateCampaignProgress, pauseCampaign } from './campaigns';
+import { updateContactStatus, updateCampaignCounts, addAuditLog } from './campaigns';
 import { campaignManager } from './campaignManager';
 
 export interface SendProgress {
@@ -212,7 +212,6 @@ export async function sendCampaign(
   abortSignal?: AbortSignal,
   schedule?: { allowedWeekDays?: number[]; allowedTimes?: string[] },
   campaignId?: string,
-  startIndex?: number,
 ): Promise<SendProgress> {
   if (selectedPhoneNumbers.length === 0) throw new Error('Nenhum número remetente selecionado');
 
@@ -309,19 +308,23 @@ export async function sendCampaign(
   }
 
   let phoneIndex = 0;
-  const effectiveStart = startIndex || 0;
 
-  for (let i = effectiveStart; i < contacts.length; i++) {
+  for (let i = 0; i < contacts.length; i++) {
     if (abortSignal?.aborted) {
       progress.status = 'paused';
       addLog('⏸️ Campanha pausada pelo usuário', 'warning');
       if (campaignId) {
-        await pauseCampaign(campaignId, {
+        await addAuditLog(campaignId, 'paused', {
+          sent: progress.sent,
+          failed: progress.failed,
+          replied: progress.replied,
+        });
+        await updateCampaignCounts(campaignId, {
           sent_count: progress.sent,
           failed_count: progress.failed,
           replied_count: progress.replied,
-          current_index: i,
-        }).catch(() => {});
+          pending_count: contacts.length - i,
+        });
       }
       return progress;
     }
@@ -335,6 +338,7 @@ export async function sendCampaign(
     const rawPhoneNumber = contact.numero || contact.phone || '';
     const phoneNumber = String(rawPhoneNumber).replace(/\D/g, '');
     const contactName = contact.nome || contact.name || rawPhoneNumber;
+    const contactDbId = contact._contactDbId as string | undefined;
 
     const senderInstId = validInstances[phoneIndex % validInstances.length];
     const senderName = getInstanceName(senderInstId);
@@ -345,7 +349,17 @@ export async function sendCampaign(
     progress.percent = Math.round(((i + 1) / contacts.length) * 100);
     progress.currentContact = contactName;
 
+    // Mark contact as processing
+    if (campaignId && contactDbId) {
+      updateContactStatus(contactDbId, 'processing', {
+        attempted_at: new Date().toISOString(),
+      }).catch(() => {});
+    }
+
     addLog(`📤 Enviando para ${contactName} (${phoneNumber}) via ${senderName} [${source}]...`);
+
+    let sendSuccess = false;
+    let resultMessageId: string | undefined;
 
     try {
       const messagesToSend = settings.sendType === 'single' ? [messages[0]] : messages;
@@ -375,6 +389,7 @@ export async function sendCampaign(
           };
           const result = await sendEvoMessage(evoCreds, senderName, phoneNumber, evoMsg);
           console.log('[campaignSender] Evolution send result:', result);
+          resultMessageId = result?.key?.id || result?.id || undefined;
         } else if (source === 'evolution-go' && evoGoCreds) {
           // Evolution Go sending
           const evoGoMsg: EvolutionGoMessage = {
@@ -400,6 +415,7 @@ export async function sendCampaign(
           };
           const result = await sendEvolutionGoMessage(evoGoCreds, senderName, phoneNumber, evoGoMsg);
           console.log('[campaignSender] Evolution Go send result:', result);
+          resultMessageId = result?.key?.id || result?.id || undefined;
         } else if (source === 'unoapi' && unoCreds) {
           // UnoAPI sending
           console.log('[campaignSender] Sending via UnoAPI:', {
@@ -596,6 +612,7 @@ export async function sendCampaign(
         }
 
         progress.sent++;
+        sendSuccess = true;
         const mediaLabel = msg.mediaType && msg.mediaType !== 'text' ? ` (${msg.mediaType})` : '';
         addLog(`✅ Mensagem${mediaLabel} enviada para ${contactName}`, 'success');
 
@@ -604,6 +621,7 @@ export async function sendCampaign(
 
       onProgress({ ...progress });
     } catch (err: any) {
+      sendSuccess = false;
       progress.failed++;
       const errorMsg = err.message || 'Erro desconhecido';
       progress.errors.push({ contact: contactName, error: errorMsg });
@@ -617,14 +635,23 @@ export async function sendCampaign(
       onProgress({ ...progress });
     }
 
-    // Periodic progress save to DB
-    if (campaignId && i % 10 === 0 && i > effectiveStart) {
-      await updateCampaignProgress(campaignId, {
-        sent_count: progress.sent,
-        failed_count: progress.failed,
-        replied_count: progress.replied,
-        current_index: i,
-      }).catch(() => {});
+    // Update individual contact status
+    if (campaignId && contactDbId) {
+      if (sendSuccess) {
+        updateContactStatus(contactDbId, 'sent', {
+          sent_at: new Date().toISOString(),
+          attempted_at: new Date().toISOString(),
+          message_id: resultMessageId || null,
+        }).catch(() => {});
+      } else {
+        const retryCount = (typeof contact._retryCount === 'number' ? contact._retryCount : 0) + 1;
+        updateContactStatus(contactDbId, 'failed', {
+          error: progress.errors[progress.errors.length - 1]?.error || 'Erro desconhecido',
+          error_message: progress.errors[progress.errors.length - 1]?.error || null,
+          attempted_at: new Date().toISOString(),
+          retry_count: retryCount,
+        }).catch(() => {});
+      }
     }
 
     // Interval
@@ -642,12 +669,17 @@ export async function sendCampaign(
   onProgress({ ...progress });
 
   if (campaignId) {
-    await updateCampaignProgress(campaignId, {
+    await updateCampaignCounts(campaignId, {
       sent_count: progress.sent,
       failed_count: progress.failed,
       replied_count: progress.replied,
-      current_index: contacts.length,
-    }).catch(() => {});
+      pending_count: 0,
+    });
+    await addAuditLog(campaignId, 'completed', {
+      sent: progress.sent,
+      failed: progress.failed,
+      replied: progress.replied,
+    });
   }
 
   return progress;
