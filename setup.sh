@@ -150,6 +150,186 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════
+#  DETECTAR POSTGRESQL EXISTENTE
+# ═══════════════════════════════════════════════════════════════
+
+detect_postgres() {
+  PG_EXISTING=false
+  PG_HOST_CONTAINER="postgres"
+
+  if nc -z localhost 5432 2>/dev/null || ss -tlnp 2>/dev/null | grep -q ':5432 '; then
+    echo ""
+    echo -e "${CYAN}[setup]${NC} PostgreSQL detectado no host (porta 5432)."
+    echo -e -n "${CYAN}[setup]${NC} Usar o existente? (s/N): "
+    read USE_EXISTING_PG
+    if [[ "$USE_EXISTING_PG" =~ ^[sS]$ ]]; then
+      read -p "  User (default: postgres): " PG_USER_EXISTING
+      PG_USER_EXISTING="${PG_USER_EXISTING:-postgres}"
+      read -sp "  Senha (Enter para nenhuma): " PG_PASS_EXISTING
+      echo ""
+      read -p "  Database (default: remix): " PG_DB_EXISTING
+      PG_DB_EXISTING="${PG_DB_EXISTING:-remix}"
+
+      local PG_TEST
+      PG_TEST=$(PGPASSWORD="$PG_PASS_EXISTING" psql -h localhost -U "$PG_USER_EXISTING" -c "SELECT 1" 2>/dev/null)
+      if [ -z "$PG_TEST" ]; then
+        warn "Conexão falhou. Usando PostgreSQL Docker."
+        return
+      fi
+
+      PG_EXISTING=true
+      PG_HOST_CONTAINER="host.docker.internal"
+      info "Conectado ao PostgreSQL existente"
+
+      # Criar database se não existir
+      PGPASSWORD="$PG_PASS_EXISTING" psql -h localhost -U "$PG_USER_EXISTING" -tc \
+        "SELECT 1 FROM pg_database WHERE datname='$PG_DB_EXISTING'" | grep -q 1 2>/dev/null || {
+        info "Criando database $PG_DB_EXISTING..."
+        PGPASSWORD="$PG_PASS_EXISTING" createdb -h localhost -U "$PG_USER_EXISTING" "$PG_DB_EXISTING" 2>/dev/null || true
+      }
+
+      # Rodar schema.sql
+      info "Executando schema.sql..."
+      PGPASSWORD="$PG_PASS_EXISTING" psql -h localhost -U "$PG_USER_EXISTING" -d "$PG_DB_EXISTING" -f server/db/schema.sql -q 2>/dev/null || true
+
+      ok "PostgreSQL existente configurado"
+    fi
+  fi
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  GERAR COMPOSE FILE
+# ═══════════════════════════════════════════════════════════════
+
+generate_compose_file() {
+  local FILE="$1"
+  local WITH_NGINX="$2"
+  local DOCKER_IMAGE="$3"
+
+  if [ "$PG_EXISTING" = true ]; then
+    info "Gerando compose sem PostgreSQL (usando existente)..."
+  fi
+
+  cat > "$FILE" << COMPOSE
+services:
+COMPOSE
+
+  # PostgreSQL (apenas se Docker)
+  if [ "$PG_EXISTING" != true ]; then
+    cat >> "$FILE" << 'POSTGRES'
+  postgres:
+    image: postgres:16-alpine
+    container_name: remix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: remix
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: remix
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U remix"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - remix-net
+
+POSTGRES
+  fi
+
+  # App
+  cat >> "$FILE" << APP
+  app:
+APP
+  if [ -n "$DOCKER_IMAGE" ]; then
+    echo "    image: $DOCKER_IMAGE" >> "$FILE"
+  else
+    echo "    build: ." >> "$FILE"
+  fi
+  cat >> "$FILE" << APP
+    container_name: remix-app
+    restart: unless-stopped
+    environment:
+      PG_HOST: $PG_HOST_CONTAINER
+      PG_PORT: 5432
+      PG_USER: remix
+      PG_PASSWORD: \${PG_PASSWORD}
+      PG_DATABASE: remix
+      JWT_SECRET: \${JWT_SECRET}
+      NODE_ENV: production
+APP
+
+  # depends_on postgres (apenas se Docker PG)
+  if [ "$PG_EXISTING" != true ]; then
+    cat >> "$FILE" << 'DEPENDS'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+DEPENDS
+  fi
+
+  # Nginx (apenas modo nginx)
+  if [ "$WITH_NGINX" = "true" ]; then
+    cat >> "$FILE" << 'NGINX'
+    networks:
+      - remix-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: remix-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - app
+    networks:
+      - remix-net
+
+NGINX
+  else
+    cat >> "$FILE" << 'TRAEFIK_NET'
+    networks:
+      - remix-net
+
+TRAEFIK_NET
+  fi
+
+  # Footer
+  cat >> "$FILE" << 'FOOTER'
+networks:
+  remix-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+FOOTER
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  GERAR STACK PARA PORTAINER
+# ═══════════════════════════════════════════════════════════════
+
+generate_portainer_stack() {
+  echo ""
+  echo -e -n "${CYAN}[setup]${NC} Gerar stack file para importar no Portainer? (s/N): "
+  read GEN_PORTAINER
+  [[ "$GEN_PORTAINER" != "s" && "$GEN_PORTAINER" != "S" ]] && return
+
+  local STACK="portainer-stack.yml"
+  # Usa o mesmo conteudo do compose mas com valores fixos
+  $DOCKER_COMPOSE -f "$DOCKER_COMPOSE_FILE" config > "$STACK" 2>/dev/null || cp "$DOCKER_COMPOSE_FILE" "$STACK"
+
+  ok "Stack file salvo em $STACK"
+  info "Importe no Portainer: Stacks → Add stack → Cole o conteudo ou faça upload do arquivo"
+}
+
+# ═══════════════════════════════════════════════════════════════
 #  WHATSAPP API — Instalação Opcional
 # ═══════════════════════════════════════════════════════════════
 
@@ -187,8 +367,14 @@ update_nginx_for_api() {
   local LOCATION="$1"
   local PROXY_DEST="$2"
   if [ "$MODE" != "prod" ]; then return; fi
+  if [ "$PROXY_MODE" = "traefik" ]; then
+    info "Adicione esta rota no Traefik manualmente:"
+    info "  Router: Host(\`$DOMAIN\`) && PathPrefix(\`${LOCATION%/}\`)"
+    info "  Service: $PROXY_DEST"
+    info "  Middleware: stripprefix (prefixes: ${LOCATION%/})"
+    return
+  fi
   if [ ! -f nginx.conf ]; then return; fi
-  # Remove last line (}), append location block, close server block
   sed -i '$d' nginx.conf
   cat >> nginx.conf << NGINX
     $LOCATION
@@ -206,7 +392,7 @@ update_nginx_for_api() {
 
 }
 NGINX
-  $DOCKER_COMPOSE -f docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true
+  $DOCKER_COMPOSE -f "$DOCKER_COMPOSE_FILE" exec -T nginx nginx -s reload 2>/dev/null || true
 }
 
 install_evolution_api() {
@@ -409,8 +595,29 @@ fi
 read -p "Domínio (ex: meudominio.com): " DOMAIN
 [[ -z "$DOMAIN" ]] && fail "Domínio é obrigatório"
 
-read -p "Email para Let's Encrypt: " EMAIL
-[[ -z "$EMAIL" ]] && fail "Email é obrigatório"
+read -p "Usa Traefik como proxy reverso? (s/N): " USE_TRAEFIK
+if [[ "$USE_TRAEFIK" =~ ^[sS]$ ]]; then
+  PROXY_MODE="traefik"
+  read -p "Nome da rede Docker do Traefik (default: traefik-net): " TRAEFIK_NETWORK
+  TRAEFIK_NETWORK="${TRAEFIK_NETWORK:-traefik-net}"
+  EMAIL=""
+else
+  PROXY_MODE="nginx"
+  read -p "Email para Let's Encrypt: " EMAIL
+  [[ -z "$EMAIL" ]] && fail "Email é obrigatório"
+fi
+
+# ── GHCR image ──
+USE_IMAGE=false
+DOCKER_IMAGE=""
+echo ""
+read -p "Usar imagem pré-construída do GHCR? (s/N): " USE_GHCR
+if [[ "$USE_GHCR" =~ ^[sS]$ ]]; then
+  USE_IMAGE=true
+  read -p "Imagem (default: ghcr.io/achadinhospromosdagleici-dev/remix-of-message-flow:latest): " DOCKER_IMAGE
+  DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/achadinhospromosdagleici-dev/remix-of-message-flow:latest}"
+  info "Imagem será usada: $DOCKER_IMAGE"
+fi
 
 # ── Generate secrets ──
 PG_PASSWORD=$(node -e "console.log(require('crypto').randomBytes(16).toString('hex'))")
@@ -432,28 +639,31 @@ install_docker
 # ── Install Node.js ──
 install_node
 
-# ── Install system packages ──
-info "Instalando nginx + certbot + ufw..."
-apt-get install -y -qq nginx certbot python3-certbot-nginx ufw
-ok "nginx, certbot e ufw instalados"
+# ── Install system packages (Nginx mode) ──
+if [ "$PROXY_MODE" = "nginx" ]; then
+  info "Instalando nginx + certbot + ufw..."
+  apt-get install -y -qq nginx certbot python3-certbot-nginx ufw
+  ok "nginx, certbot e ufw instalados"
 
-# ── Firewall ──
-info "Configurando firewall (UFW)..."
-ufw --force reset >/dev/null 2>&1
-ufw default deny incoming >/dev/null 2>&1
-ufw default allow outgoing >/dev/null 2>&1
-ufw allow 80/tcp   >/dev/null 2>&1
-ufw allow 443/tcp  >/dev/null 2>&1
-ufw --force enable >/dev/null 2>&1
-ok "Firewall configurado (portas 80, 443 abertas)"
+  info "Configurando firewall (UFW)..."
+  ufw --force reset >/dev/null 2>&1
+  ufw default deny incoming >/dev/null 2>&1
+  ufw default allow outgoing >/dev/null 2>&1
+  ufw allow 80/tcp   >/dev/null 2>&1
+  ufw allow 443/tcp  >/dev/null 2>&1
+  ufw --force enable >/dev/null 2>&1
+  ok "Firewall configurado (portas 80, 443 abertas)"
+fi
+
+# ── PostgreSQL: detectar existente ou usar Docker ──
+detect_postgres
 
 # ── Create .env ──
 setup_env
-# Override PG_HOST for Docker networking
 if grep -q '^PG_HOST=' server/.env; then
-  sed -i "s/^PG_HOST=.*$/PG_HOST=postgres/" server/.env
+  sed -i "s|^PG_HOST=.*$|PG_HOST=$PG_HOST_CONTAINER|" server/.env
 else
-  echo "PG_HOST=postgres" >> server/.env
+  echo "PG_HOST=$PG_HOST_CONTAINER" >> server/.env
 fi
 if grep -q '^PG_PASSWORD=' server/.env; then
   sed -i "s/^PG_PASSWORD=.*$/PG_PASSWORD=$PG_PASSWORD/" server/.env
@@ -463,48 +673,53 @@ if grep -q '^JWT_SECRET=' server/.env; then
 fi
 ok "server/.env configurado para produção"
 
-# ── npm dependencies ──
-info "Instalando dependências npm..."
-npm install --silent 2>/dev/null || true
-(cd server && npm install --silent 2>/dev/null || true)
-ok "Dependências instaladas"
+# ── npm dependencies (pulado se usar imagem) ──
+if [ "$USE_IMAGE" != true ]; then
+  info "Instalando dependências npm..."
+  npm install --silent 2>/dev/null || true
+  (cd server && npm install --silent 2>/dev/null || true)
+  ok "Dependências instaladas"
 
-# ── Build frontend ──
-info "Compilando frontend..."
-npm run build
-ok "Frontend compilado"
-
-# ── Create nginx conf dir ──
-mkdir -p /etc/nginx 2>/dev/null || true
-
-# ── Stop any existing Docker containers ──
-$DOCKER_COMPOSE -f docker-compose.prod.yml down 2>/dev/null || true
-
-# ── Get SSL certificate (standalone — needs port 80 temporarily) ──
-info "Obtendo certificado SSL para $DOMAIN..."
-systemctl stop nginx 2>/dev/null || true
-certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --email "$EMAIL" || {
-  warn "Certbot standalone falhou. Tentando via webroot..."
-  systemctl start nginx 2>/dev/null || true
-  certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --non-interactive --agree-tos --email "$EMAIL" || {
-    warn "Certbot webroot falhou. A instalação continuará sem SSL."
-    warn "Execute manualmente depois: certbot --nginx -d $DOMAIN"
-    SSL_OK=false
-  }
-}
-systemctl start nginx 2>/dev/null || true
-SSL_OK=${SSL_OK:-true}
-
-# ── SSL auto-renovação ──
-if $SSL_OK && command -v crontab &>/dev/null; then
-  (crontab -l 2>/dev/null | grep -q "certbot renew" || echo "0 3 * * * certbot renew --quiet && $DOCKER_COMPOSE -f $SCRIPT_DIR/docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true" | crontab -)
-  ok "Auto-renovação SSL configurada (cron: 3:00 AM)"
+  # ── Build frontend ──
+  info "Compilando frontend..."
+  npm run build
+  ok "Frontend compilado"
+else
+  info "Usando imagem pré-construída — pulando npm install e build"
 fi
 
-# ── Generate production nginx.conf with SSL ──
-info "Gerando nginx.conf com SSL..."
-if $SSL_OK && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
-  cat > nginx.conf << NGINX
+# ── Stop any existing containers ──
+$DOCKER_COMPOSE -f docker-compose.prod.yml down 2>/dev/null || true
+$DOCKER_COMPOSE -f docker-compose.traefik.yml down 2>/dev/null || true
+
+if [ "$PROXY_MODE" = "nginx" ]; then
+  DOCKER_COMPOSE_FILE="docker-compose.prod.yml"
+
+  # ── Get SSL certificate ──
+  info "Obtendo certificado SSL para $DOMAIN..."
+  systemctl stop nginx 2>/dev/null || true
+  certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --email "$EMAIL" || {
+    warn "Certbot standalone falhou. Tentando via webroot..."
+    systemctl start nginx 2>/dev/null || true
+    certbot certonly --webroot -w /var/www/html -d "$DOMAIN" --non-interactive --agree-tos --email "$EMAIL" || {
+      warn "Certbot webroot falhou. A instalação continuará sem SSL."
+      warn "Execute manualmente depois: certbot --nginx -d $DOMAIN"
+      SSL_OK=false
+    }
+  }
+  systemctl start nginx 2>/dev/null || true
+  SSL_OK=${SSL_OK:-true}
+
+  # ── SSL auto-renovação ──
+  if $SSL_OK && command -v crontab &>/dev/null; then
+    (crontab -l 2>/dev/null | grep -q "certbot renew" || echo "0 3 * * * certbot renew --quiet && cd $SCRIPT_DIR && $DOCKER_COMPOSE -f docker-compose.prod.yml exec -T nginx nginx -s reload 2>/dev/null || true" | crontab -)
+    ok "Auto-renovação SSL configurada (cron: 3:00 AM)"
+  fi
+
+  # ── Generate nginx.conf ──
+  info "Gerando nginx.conf com SSL..."
+  if $SSL_OK && [ -d "/etc/letsencrypt/live/$DOMAIN" ]; then
+    cat > nginx.conf << NGINX
 server {
     listen 80;
     server_name $DOMAIN;
@@ -533,8 +748,8 @@ server {
     }
 }
 NGINX
-else
-  cat > nginx.conf << NGINX
+  else
+    cat > nginx.conf << NGINX
 server {
     listen 80;
     server_name $DOMAIN;
@@ -552,23 +767,54 @@ server {
     }
 }
 NGINX
-fi
-ok "nginx.conf gerado"
+  fi
+  ok "nginx.conf gerado"
 
-# ── Stop host nginx (Docker nginx vai usar porta 80/443) ──
-systemctl stop nginx 2>/dev/null || true
-systemctl disable nginx 2>/dev/null || true
+  systemctl stop nginx 2>/dev/null || true
+  systemctl disable nginx 2>/dev/null || true
+
+  # ── Generate compose file (Nginx mode) ──
+  generate_compose_file "$DOCKER_COMPOSE_FILE" "true" "$DOCKER_IMAGE"
+
+else
+  # ── Traefik mode ──
+  DOCKER_COMPOSE_FILE="docker-compose.traefik.yml"
+  generate_compose_file "$DOCKER_COMPOSE_FILE" "false" "$DOCKER_IMAGE"
+  # Add Traefik labels to app service
+  sed -i "/^  app:/a\    labels:\n      - \"traefik.enable=true\"\n      - \"traefik.http.routers.remix.rule=Host($DOMAIN)\"\n      - \"traefik.http.routers.remix.entrypoints=websecure\"\n      - \"traefik.http.routers.remix.tls.certresolver=letsencrypt\"\n      - \"traefik.http.services.remix.loadbalancer.server.port=3000\"" "$DOCKER_COMPOSE_FILE"
+  # Replace remix-net with proxy
+  sed -i 's/remix-net/proxy/g' "$DOCKER_COMPOSE_FILE"
+  # Replace network section for Traefik (external network)
+  sed -i '/^networks:/,$d' "$DOCKER_COMPOSE_FILE"
+  cat >> "$DOCKER_COMPOSE_FILE" << TRAEFIK_FOOTER
+networks:
+  proxy:
+    external: true
+    name: $TRAEFIK_NETWORK
+
+volumes:
+  pgdata:
+TRAEFIK_FOOTER
+  info "Traefik configurado — SSL gerenciado pelo Traefik"
+fi
+
+# ── Pull image (se pré-construída) ──
+if [ "$USE_IMAGE" = "true" ]; then
+  info "Baixando imagem $DOCKER_IMAGE..."
+  docker pull "$DOCKER_IMAGE" 2>/dev/null || true
+fi
 
 # ── Start Docker containers ──
 info "Iniciando containers Docker..."
-$DOCKER_COMPOSE -f docker-compose.prod.yml up -d
+$DOCKER_COMPOSE -f "$DOCKER_COMPOSE_FILE" up -d
 ok "Containers iniciados"
 
 # ── Wait for app health ──
 info "Aguardando aplicação responder..."
 for i in $(seq 1 30); do
-  if curl -sf http://localhost/api/health >/dev/null 2>&1; then
-    ok "Aplicação respondendo na porta 80"
+  if curl -sf http://localhost:3000/api/health 2>/dev/null || \
+     curl -sf http://localhost/api/health 2>/dev/null; then
+    ok "Aplicação respondendo"
     break
   fi
   sleep 2
@@ -606,6 +852,9 @@ ok "Credenciais salvas em $CRED_FILE"
 export PG_PASSWORD
 install_whatsapp_api
 
+# ── Optional Portainer stack ──
+generate_portainer_stack
+
 # ── Pronto ──
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
@@ -616,8 +865,8 @@ echo -e "${GREEN}║                                                    ║${NC}
 echo -e "${GREEN}║  Credenciais: ${YELLOW}$CRED_FILE${GREEN}                 ║${NC}"
 echo -e "${GREEN}║                                                    ║${NC}"
 echo -e "${GREEN}║  Comandos úteis:                                   ║${NC}"
-echo -e "${GREEN}║  $DOCKER_COMPOSE -f docker-compose.prod.yml logs -f ║${NC}"
-echo -e "${GREEN}║  $DOCKER_COMPOSE -f docker-compose.prod.yml restart ║${NC}"
+echo -e "${GREEN}║  $DOCKER_COMPOSE -f $DOCKER_COMPOSE_FILE logs -f ║${NC}"
+echo -e "${GREEN}║  $DOCKER_COMPOSE -f $DOCKER_COMPOSE_FILE restart ║${NC}"
 echo -e "${GREEN}║                                                    ║${NC}"
 echo -e "${GREEN}║  ⚙️  Configure sua API WhatsApp nas Configurações   ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
